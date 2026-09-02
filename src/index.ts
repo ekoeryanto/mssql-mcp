@@ -5,16 +5,18 @@
  * Main entry point - Using modern MCP SDK approach
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import * as http from 'node:http';
-import { z } from 'zod';
 import { loadConfig } from './config/index.js';
 import SimpleLogger from './logger/index.js';
 import SqlServerConnectionManager from './db/connection.js';
 import ToolHandlers from './tools/handlers.js';
+import { callDynamicSkill, loadDynamicTools, saveSkill } from './tools/dynamicSkills.js';
+import type { McpToolDef, SaveSkillInput } from './types/index.js';
 
 const SERVER_NAME = 'mssql-mcp';
 const SERVER_VERSION = '1.2.0';
@@ -27,13 +29,29 @@ const logger = new SimpleLogger(SERVER_NAME, config.logLevel);
 let db: SqlServerConnectionManager | null = null;
 let handlers: ToolHandlers | null = null;
 
-async function getHandlers(): Promise<ToolHandlers> {
+async function getStore(): Promise<{ db: SqlServerConnectionManager; handlers: ToolHandlers }> {
   if (!db || !handlers) {
     db = new SqlServerConnectionManager(config.sqlServer, logger);
     handlers = new ToolHandlers(db, logger, config.sqlServer.allowMutations);
     await db.connect();
   }
-  return handlers;
+  return { db, handlers };
+}
+
+/**
+ * Like getStore(), but never throws — returns null (and logs a warning) if
+ * SQL Server is unreachable, so tools/list and dynamic tools/call can
+ * degrade gracefully instead of failing the whole request.
+ */
+async function getStoreOrNull(): Promise<SqlServerConnectionManager | null> {
+  try {
+    const { db: connectedDb } = await getStore();
+    return connectedDb;
+  } catch (error) {
+    logger.warn('SQL Server unavailable for dynamic skills');
+    logger.error('getStore failed', error);
+    return null;
+  }
 }
 
 function toToolResult(result: unknown): CallToolResult {
@@ -46,7 +64,8 @@ function toToolResult(result: unknown): CallToolResult {
  */
 async function runTool<T>(fn: (handlers: ToolHandlers) => Promise<T>): Promise<CallToolResult> {
   try {
-    const result = await fn(await getHandlers());
+    const { handlers } = await getStore();
+    const result = await fn(handlers);
     return toToolResult(result);
   } catch (error) {
     logger.error('Tool execution failed', error);
@@ -57,73 +76,150 @@ async function runTool<T>(fn: (handlers: ToolHandlers) => Promise<T>): Promise<C
   }
 }
 
+const staticToolDefs: McpToolDef[] = [
+  {
+    name: 'query',
+    description: 'Execute a SELECT query and retrieve results',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'SQL SELECT query to execute' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'execute-statement',
+    description: 'Execute INSERT, UPDATE, DELETE, or DDL statements',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        statement: {
+          type: 'string',
+          description: 'SQL statement to execute (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP)',
+        },
+        params: {
+          type: 'object',
+          description: 'Optional parameters for parameterized queries',
+        },
+      },
+      required: ['statement'],
+    },
+  },
+  {
+    name: 'get-metadata',
+    description: 'Retrieve database metadata (databases, tables, columns, or procedures)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['databases', 'tables', 'columns', 'procedures'],
+          description: 'Type of metadata to retrieve',
+        },
+        filter: {
+          type: 'string',
+          description: 'Optional filter (e.g., table name for columns query)',
+        },
+      },
+      required: ['type'],
+    },
+  },
+  {
+    name: 'execute-procedure',
+    description: 'Execute a stored procedure with optional input/output parameters',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name of the stored procedure' },
+        params: {
+          type: 'object',
+          description: 'Optional parameters object with structure: { paramName: { value: any, output?: boolean } }',
+        },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'get-status',
+    description: 'Get current connection status and pool information',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'save-skill',
+    description:
+      'Create or update a reusable SQL "skill" exposed as a new tool. Explore the schema with get-metadata first, then define the SQL and its input schema here.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tool_name: { type: 'string', description: 'Unique snake/kebab-case tool identifier' },
+        description: { type: 'string', description: 'What this skill does, shown when browsing tools/list' },
+        keywords: { type: 'string', description: 'Comma-separated keywords to help discovery' },
+        generated_prompt: {
+          type: 'string',
+          description:
+            'JSON Schema (as a string) describing this tool\'s input arguments. Every property MUST have its own non-empty "description" — this is what a future AI session reads to know what value to supply, so write it as if explaining the parameter to someone who has never seen this skill before.',
+        },
+        generated_sql: {
+          type: 'string',
+          description: "Parameterized SQL using @paramName placeholders matching generated_prompt's properties",
+        },
+      },
+      required: ['tool_name', 'description', 'generated_prompt', 'generated_sql'],
+    },
+  },
+];
+
+const STATIC_TOOL_NAMES = new Set(staticToolDefs.map((t) => t.name));
+
 /**
- * Create an MCP server instance wired up to the query/execute/metadata tools.
+ * Create an MCP server instance wired up to the static SQL tools and the
+ * dynamic tb_mcp_skills-backed tools.
  */
-function createMcpServer(): McpServer {
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
+function createMcpServer(): Server {
+  const server = new Server({ name: SERVER_NAME, version: SERVER_VERSION }, { capabilities: { tools: {} } });
 
-  server.registerTool(
-    'query',
-    {
-      title: 'Query',
-      description: 'Execute a SELECT query and retrieve results',
-      inputSchema: { query: z.string().describe('SQL SELECT query to execute') },
-    },
-    async ({ query }) => runTool((h) => h.handleQuery({ query })),
-  );
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const store = await getStoreOrNull();
+    const dynamicTools = store ? await loadDynamicTools(store, logger, STATIC_TOOL_NAMES) : [];
+    return { tools: [...staticToolDefs, ...dynamicTools] };
+  });
 
-  server.registerTool(
-    'execute-statement',
-    {
-      title: 'Execute Statement',
-      description: 'Execute INSERT, UPDATE, DELETE, or DDL statements',
-      inputSchema: {
-        statement: z.string().describe('SQL statement to execute (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP)'),
-        params: z.record(z.string(), z.unknown()).optional().describe('Optional parameters for parameterized queries'),
-      },
-    },
-    async ({ statement, params }) => runTool((h) => h.handleExecute({ statement, params })),
-  );
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
 
-  server.registerTool(
-    'get-metadata',
-    {
-      title: 'Get Metadata',
-      description: 'Retrieve database metadata (databases, tables, columns, or procedures)',
-      inputSchema: {
-        type: z.enum(['databases', 'tables', 'columns', 'procedures']).describe('Type of metadata to retrieve'),
-        filter: z.string().optional().describe('Optional filter (e.g., table name for columns query)'),
-      },
-    },
-    async ({ type, filter }) => runTool((h) => h.handleMetadata({ type, filter })),
-  );
-
-  server.registerTool(
-    'execute-procedure',
-    {
-      title: 'Execute Procedure',
-      description: 'Execute a stored procedure with optional input/output parameters',
-      inputSchema: {
-        name: z.string().describe('Name of the stored procedure'),
-        params: z
-          .record(z.string(), z.object({ value: z.unknown(), output: z.boolean().optional() }))
-          .optional()
-          .describe('Optional parameters object: { paramName: { value: any, output?: boolean } }'),
-      },
-    },
-    async ({ name, params }) => runTool((h) => h.handleExecuteProcedure({ name, params })),
-  );
-
-  server.registerTool(
-    'get-status',
-    {
-      title: 'Get Status',
-      description: 'Get current connection status and pool information',
-      inputSchema: {},
-    },
-    async () => runTool((h) => h.handleGetStatus()),
-  );
+    switch (name) {
+      case 'query':
+        return runTool((h) => h.handleQuery(args as { query: string }));
+      case 'execute-statement':
+        return runTool((h) => h.handleExecute(args as { statement: string; params?: Record<string, unknown> }));
+      case 'get-metadata':
+        return runTool((h) =>
+          h.handleMetadata(args as { type: 'databases' | 'tables' | 'columns' | 'procedures'; filter?: string }),
+        );
+      case 'execute-procedure':
+        return runTool((h) =>
+          h.handleExecuteProcedure(
+            args as { name: string; params?: Record<string, { value?: unknown; output?: boolean }> },
+          ),
+        );
+      case 'get-status':
+        return runTool((h) => h.handleGetStatus());
+      default: {
+        const store = await getStoreOrNull();
+        if (!store) {
+          return {
+            content: [{ type: 'text', text: 'Error: SQL Server is unavailable' }],
+            isError: true,
+          };
+        }
+        if (name === 'save-skill') {
+          return saveSkill(store, logger, STATIC_TOOL_NAMES, args as unknown as SaveSkillInput);
+        }
+        return callDynamicSkill(store, logger, name, (args ?? {}) as Record<string, unknown>);
+      }
+    }
+  });
 
   return server;
 }
