@@ -1,5 +1,28 @@
 # Changelog
 
+# 1.1.0 (2026-09-02)
+
+### Bug Fixes
+
+* delay transport storage until server connection and add agent configuration file ([1b7b1c9](https://github.com/ekoeryanto/mssql-mcp/commit/1b7b1c966de516ebc805cd642a94d7b214785ecd))
+* deprecated server usage ([cb58ecf](https://github.com/ekoeryanto/mssql-mcp/commit/cb58ecf43b2b7fb7eacb13771e4622e0cfd1c903))
+* docker env ([b6775ff](https://github.com/ekoeryanto/mssql-mcp/commit/b6775ff4291316d851b7212a797c2f08c07f88ff))
+* docker run with bun ([e927eda](https://github.com/ekoeryanto/mssql-mcp/commit/e927eda9679bca016f423475c21aa0b415cc1ce2))
+* docker run with bun removed dist ([6f9c6ac](https://github.com/ekoeryanto/mssql-mcp/commit/6f9c6acbe7c8dca8af89f415541901c9c610e9a4))
+* init error ([ddd1ddb](https://github.com/ekoeryanto/mssql-mcp/commit/ddd1ddb4c1278fae3ea344d9ba4d3ac2339fa795))
+* no build bun ([aa532d8](https://github.com/ekoeryanto/mssql-mcp/commit/aa532d899c36bb2a700d5f008cc8ad81ab2f525e))
+* stdio err ([5d157ab](https://github.com/ekoeryanto/mssql-mcp/commit/5d157ab0533c3bf538965996acdbfa1ac0818c5c))
+* ts build error ([0c62caf](https://github.com/ekoeryanto/mssql-mcp/commit/0c62caf9c82d8e6a9bbbfa62e349ebfeaa0f224d))
+* unresolved module ([de11bde](https://github.com/ekoeryanto/mssql-mcp/commit/de11bdea82200c8f2eaefde3dd8b68453db75997))
+* use absolute URL for SSE transport and improve session handling logs and error reporting ([b942656](https://github.com/ekoeryanto/mssql-mcp/commit/b9426564a127dcf4203f186075ffe4c068c25dc5))
+
+### Features
+
+* add periodic SSE keep-alive pings and expose a POST /query REST endpoint ([141f08f](https://github.com/ekoeryanto/mssql-mcp/commit/141f08f8f01919cc8c651ff25a8b6914738d5905))
+* add SQL mutation protection and support for MCP bundle deployment configurations ([affab42](https://github.com/ekoeryanto/mssql-mcp/commit/affab42aa82de2ea81307d8115891b3313ac1846))
+* add SSE response headers to disable buffering and maintain connection persistence ([1fcfa79](https://github.com/ekoeryanto/mssql-mcp/commit/1fcfa7974a60b0c576a96a4185c247ed53a461c2))
+* add SSE transport support and improve configuration robustness and logging output ([c0923ff](https://github.com/ekoeryanto/mssql-mcp/commit/c0923ffd9da0591bc2edaed451792d21f9fadc4d))
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
