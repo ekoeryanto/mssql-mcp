@@ -3,8 +3,8 @@
  * Demonstrates how to use the MCP server
  */
 
-import { Client } from 'mcp';
-import { StdioClientTransport } from 'mcp/client/stdio';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { spawn } from 'child_process';
 
 async function main() {

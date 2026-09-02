@@ -5,9 +5,9 @@
  * Main entry point
  */
 
-import { Server } from 'mcp';
-import { StdioServerTransport } from 'mcp/server/stdio';
-import type { Tool, TextContent } from 'mcp/types';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { loadConfig } from './config/index.js';
 import SimpleLogger from './logger/index.js';
 import SqlServerConnectionManager from './db/connection.js';
