@@ -248,14 +248,15 @@ async function main(): Promise<void> {
           res.writeHead(204, {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
           });
           res.end();
           return;
         }
 
         const url = new URL(req.url || '/', `http://${req.headers.host}`);
-        const pathname = url.pathname;
+        let pathname = url.pathname.replace(/\/$/, '');
+        if (pathname === '') pathname = '/';
 
         if (pathname === '/health' && req.method === 'GET') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -308,12 +309,7 @@ async function main(): Promise<void> {
           res.setHeader('Cache-Control', 'no-cache');
           res.setHeader('Connection', 'keep-alive');
 
-          // Gunakan absolute URL agar klien tidak salah *resolve* path relatif
-          const protocol = req.headers['x-forwarded-proto'] || 'http';
-          const host = req.headers['x-forwarded-host'] || req.headers.host;
-          const absoluteMessageUrl = `${protocol}://${host}/message`;
-
-          const transport = new SSEServerTransport(absoluteMessageUrl, res);
+          const transport = new SSEServerTransport('/message', res);
 
           const server = new Server(
             { name: 'mssql-mcp', version: '1.0.0' },
