@@ -30,7 +30,7 @@ ENV NODE_ENV=production
 FROM base AS release
 COPY --from=install /temp/prod/node_modules node_modules
 # COPY --from=prerelease /usr/src/app/index.ts .
-COPY --from=prerelease /usr/src/app/package.json .
+COPY --from=prerelease . .
 
 # run the app
 USER bun
