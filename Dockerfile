@@ -1,38 +1,38 @@
-# Build stage
-FROM oven/bun:1 AS builder
+# use the official Bun image
+# see all versions at https://hub.docker.com/r/oven/bun/tags
+FROM oven/bun:1 AS base
+WORKDIR /usr/src/app
 
-WORKDIR /app
+# install dependencies into temp directory
+# this will cache them and speed up future builds
+FROM base AS install
+RUN mkdir -p /temp/dev
+COPY package.json bun.lock /temp/dev/
+RUN cd /temp/dev && bun install --frozen-lockfile
 
-# Copy package files
-COPY package.json bun.lock* ./
+# install with --production (exclude devDependencies)
+RUN mkdir -p /temp/prod
+COPY package.json bun.lock /temp/prod/
+RUN cd /temp/prod && bun install --frozen-lockfile --production
 
-# Install dependencies
-RUN bun install --production
+# copy node_modules from temp directory
+# then copy all (non-ignored) project files into the image
+FROM base AS prerelease
+COPY --from=install /temp/dev/node_modules node_modules
+COPY . .
 
-# Copy source
-COPY src ./src
-COPY tsconfig.json ./
+# [optional] tests & build
+ENV NODE_ENV=production
+# RUN bun test
+# RUN bun run build
 
-# Build TypeScript
-# RUN bun build ./src/index.ts --outdir ./dist --target node
+# copy production dependencies and source code into final image
+FROM base AS release
+COPY --from=install /temp/prod/node_modules node_modules
+COPY --from=prerelease /usr/src/app/index.ts .
+COPY --from=prerelease /usr/src/app/package.json .
 
-# Runtime stage
-FROM oven/bun:1
-
-WORKDIR /app
-
-# Copy built artifacts
-# COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY package.json ./
-
-# Set default environment variables (akan di-override oleh Dokploy/Docker)
-ENV SQLSERVER_SERVER=localhost
-ENV SQLSERVER_PORT=1433
-ENV SQLSERVER_DATABASE=master
-ENV SQLSERVER_USERNAME=sa
-ENV SQLSERVER_PASSWORD=
-ENV LOG_LEVEL=info
-
-# Run the server with node (bukan bun)
-CMD ["bun", "src/index.ts"]
+# run the app
+USER bun
+# EXPOSE 3000/tcp
+ENTRYPOINT [ "bun", "run", "src/index.ts" ]
