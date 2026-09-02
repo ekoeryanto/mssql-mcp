@@ -269,7 +269,7 @@ async function main(): Promise<void> {
         }
 
         // Authentication Middleware
-        if (config.authToken) {
+        if (config.authToken && pathname !== '/message') {
           const authHeader = req.headers.authorization;
           const queryToken = url.searchParams.get('token');
           let isAuthenticated = false;
@@ -411,6 +411,7 @@ async function main(): Promise<void> {
           return;
         }
 
+        logger.warn(`404 Not Found: ${req.method} ${req.url} (resolved pathname: ${pathname})`);
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not Found');
       });
