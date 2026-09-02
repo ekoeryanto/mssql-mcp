@@ -24,7 +24,7 @@ Comprehensive guide for deploying MCP SQL Server in various environments.
 1. **Clone Repository**
 ```bash
 git clone https://github.com/ekoeryanto/mssql-mcp.git
-cd mcp-sqlserver
+cd mssql-mcp
 ```
 
 2. **Install Dependencies**
@@ -94,13 +94,13 @@ docker-compose down
 
 #### Build Image
 ```bash
-docker build -t mcp-sqlserver:latest .
+docker build -t mssql-mcp:latest .
 ```
 
 #### Run Container
 ```bash
 docker run -d \
-  --name mcp-sqlserver \
+  --name mssql-mcp \
   -e SQLSERVER_SERVER=your-server \
   -e SQLSERVER_PORT=1433 \
   -e SQLSERVER_USERNAME=sa \
@@ -109,7 +109,7 @@ docker run -d \
   -e LOG_LEVEL=info \
   --stdin \
   --tty \
-  mcp-sqlserver:latest
+  mssql-mcp:latest
 ```
 
 ### Docker Compose with External SQL Server
@@ -138,10 +138,10 @@ Connect to SQL Server on host machine:
 
 ```bash
 docker run -d \
-  --name mcp-sqlserver \
+  --name mssql-mcp \
   --network host \
   -e SQLSERVER_SERVER=localhost \
-  mcp-sqlserver:latest
+  mssql-mcp:latest
 ```
 
 ### Health Checks
@@ -187,7 +187,7 @@ SQLSERVER_REQUEST_TIMEOUT=60000
 
 # Logging
 LOG_LEVEL=warn
-MCP_SERVER_NAME=mcp-sqlserver-prod
+MCP_SERVER_NAME=mssql-mcp-prod
 ```
 
 ### Database Permissions
@@ -216,7 +216,7 @@ GRANT SELECT ON SCHEMA::dbo TO [app_user];
 
 #### Linux (Systemd)
 
-Create `/etc/systemd/system/mcp-sqlserver.service`:
+Create `/etc/systemd/system/mssql-mcp.service`:
 
 ```ini
 [Unit]
@@ -226,9 +226,9 @@ After=network.target
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/opt/mcp-sqlserver
-EnvironmentFile=/opt/mcp-sqlserver/.env
-ExecStart=/usr/bin/node /opt/mcp-sqlserver/dist/index.js
+WorkingDirectory=/opt/mssql-mcp
+EnvironmentFile=/opt/mssql-mcp/.env
+ExecStart=/usr/bin/node /opt/mssql-mcp/dist/index.js
 Restart=on-failure
 RestartSec=10
 
@@ -239,9 +239,9 @@ WantedBy=multi-user.target
 Enable and start:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable mcp-sqlserver
-sudo systemctl start mcp-sqlserver
-sudo systemctl status mcp-sqlserver
+sudo systemctl enable mssql-mcp
+sudo systemctl start mssql-mcp
+sudo systemctl status mssql-mcp
 ```
 
 #### Windows (Task Scheduler)
@@ -249,7 +249,7 @@ sudo systemctl status mcp-sqlserver
 Create scheduled task to run at startup:
 ```powershell
 $action = New-ScheduledTaskAction -Execute "C:\Program Files\nodejs\node.exe" `
-  -Argument "C:\opt\mcp-sqlserver\dist\index.js"
+  -Argument "C:\opt\mssql-mcp\dist\index.js"
 Register-ScheduledTask -Action $action -TaskName "MCP-SQLServer" -RunLevel Highest
 ```
 
@@ -263,22 +263,22 @@ Register-ScheduledTask -Action $action -TaskName "MCP-SQLServer" -RunLevel Highe
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mcp-sqlserver
+  name: mssql-mcp
   labels:
-    app: mcp-sqlserver
+    app: mssql-mcp
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mcp-sqlserver
+      app: mssql-mcp
   template:
     metadata:
       labels:
-        app: mcp-sqlserver
+        app: mssql-mcp
     spec:
       containers:
-      - name: mcp-sqlserver
-        image: mcp-sqlserver:latest
+      - name: mssql-mcp
+        image: mssql-mcp:latest
         imagePullPolicy: Always
         stdin: true
         tty: true
@@ -339,7 +339,7 @@ kubectl create secret generic sqlserver-credentials \
 ```bash
 kubectl apply -f deployment.yaml
 kubectl get pods
-kubectl logs -f deployment/mcp-sqlserver
+kubectl logs -f deployment/mssql-mcp
 ```
 
 ---
@@ -351,8 +351,8 @@ kubectl logs -f deployment/mcp-sqlserver
 ```bash
 az container create \
   --resource-group myResourceGroup \
-  --name mcp-sqlserver \
-  --image mcp-sqlserver:latest \
+  --name mssql-mcp \
+  --image mssql-mcp:latest \
   --environment-variables \
     SQLSERVER_SERVER=myserver.database.windows.net \
     SQLSERVER_USERNAME=sqladmin \
@@ -366,10 +366,10 @@ Create task definition (task-definition.json):
 
 ```json
 {
-  "family": "mcp-sqlserver",
+  "family": "mssql-mcp",
   "containerDefinitions": [
     {
-      "name": "mcp-sqlserver",
+      "name": "mssql-mcp",
       "image": "YOUR_ECR_URI:latest",
       "memory": 512,
       "essential": true,
@@ -383,7 +383,7 @@ Create task definition (task-definition.json):
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/ecs/mcp-sqlserver",
+          "awslogs-group": "/ecs/mssql-mcp",
           "awslogs-region": "us-east-1",
           "awslogs-stream-prefix": "ecs"
         }
@@ -396,13 +396,13 @@ Create task definition (task-definition.json):
 Register and run:
 ```bash
 aws ecs register-task-definition --cli-input-json file://task-definition.json
-aws ecs run-task --cluster my-cluster --task-definition mcp-sqlserver
+aws ecs run-task --cluster my-cluster --task-definition mssql-mcp
 ```
 
 ### Google Cloud Run
 
 ```bash
-gcloud run deploy mcp-sqlserver \
+gcloud run deploy mssql-mcp \
   --source . \
   --platform managed \
   --region us-central1 \
@@ -431,10 +431,10 @@ View logs based on level:
 docker-compose logs -f mcp-server
 
 # Kubernetes
-kubectl logs -f deployment/mcp-sqlserver
+kubectl logs -f deployment/mssql-mcp
 
 # Systemd
-journalctl -u mcp-sqlserver -f
+journalctl -u mssql-mcp -f
 ```
 
 ### Performance Monitoring
@@ -449,7 +449,7 @@ SELECT * FROM sys.dm_exec_sessions
 
 Backup SQL Server database:
 ```bash
-docker exec mcp-sqlserver-db /opt/mssql-tools/bin/sqlcmd \
+docker exec mssql-mcp-db /opt/mssql-tools/bin/sqlcmd \
   -S localhost -U sa -P Password \
   -Q "BACKUP DATABASE [mydb] TO DISK = N'/var/opt/mssql/backup/mydb.bak'"
 ```
@@ -476,7 +476,7 @@ SQLSERVER_CONNECTION_POOL_MAX=50
 #### Connection Issues
 ```bash
 # Test connection from container
-docker exec mcp-sqlserver bun scripts/test-connection.ts
+docker exec mssql-mcp bun scripts/test-connection.ts
 
 # Check SQL Server is running
 docker ps | grep sqlserver
@@ -510,7 +510,7 @@ bun install
 bun run build
 
 # Restart service
-systemctl restart mcp-sqlserver
+systemctl restart mssql-mcp
 # or
 docker-compose up -d --build
 ```
@@ -558,7 +558,7 @@ cp .env .env.backup
    ```bash
    cp .env.backup .env
    bun run build
-   systemctl restart mcp-sqlserver
+   systemctl restart mssql-mcp
    ```
 
 3. **Verify Connection**

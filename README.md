@@ -28,8 +28,8 @@ A flexible and stable Model Context Protocol (MCP) server for Microsoft SQL Serv
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/yourusername/mcp-sqlserver.git
-cd mcp-sqlserver
+git clone https://github.com/ekoeryanto/mssql-mcp.git
+cd mssql-mcp
 ```
 
 2. **Install dependencies using Bun**
@@ -94,7 +94,7 @@ SQLSERVER_CONNECTION_POOL_MAX=10
 SQLSERVER_REQUEST_TIMEOUT=30000
 
 # Server Configuration
-MCP_SERVER_NAME=mcp-sqlserver
+MCP_SERVER_NAME=mssql-mcp
 LOG_LEVEL=info  # debug, info, warn, error
 ```
 
@@ -231,7 +231,7 @@ Check server connection status:
 ### Project Structure
 
 ```
-mcp-sqlserver/
+mssql-mcp/
 ├── src/
 │   ├── index.ts              # Main MCP server entry point
 │   ├── config/
@@ -386,8 +386,8 @@ MIT License - see LICENSE file for details
 ## Support
 
 For issues and questions:
-- GitHub Issues: [Create an issue](https://github.com/yourusername/mcp-sqlserver/issues)
-- Discussions: [Start a discussion](https://github.com/yourusername/mcp-sqlserver/discussions)
+- GitHub Issues: [Create an issue](https://github.com/ekoeryanto/mssql-mcp/issues)
+- Discussions: [Start a discussion](https://github.com/ekoeryanto/mssql-mcp/discussions)
 
 ## References
 

@@ -42,8 +42,8 @@ Thank you for your interest in contributing! This document provides guidelines a
 
 ```bash
 # Clone your fork
-git clone https://github.com/your-username/mcp-sqlserver.git
-cd mcp-sqlserver
+git clone https://github.com/your-username/mssql-mcp.git
+cd mssql-mcp
 
 # Install dependencies
 bun install

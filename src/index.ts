@@ -17,7 +17,7 @@ import ToolHandlers from './tools/handlers.js';
 
 // Configuration and logging
 const config = loadConfig();
-const logger = new SimpleLogger('mcp-sqlserver', config.logLevel);
+const logger = new SimpleLogger('mssql-mcp', config.logLevel);
 
 // Database connection manager and tool handlers
 let db: SqlServerConnectionManager | null = null;
@@ -230,12 +230,12 @@ async function main(): Promise<void> {
     if (mode === 'stdio') {
       // Create the MCP server
       const server = new Server(
-        { name: 'mcp-sqlserver', version: '1.0.0' },
+        { name: 'mssql-mcp', version: '1.0.0' },
         { capabilities: { tools: {} } }
       );
       server.setRequestHandler(ListToolsRequestSchema, handleListTools);
       server.setRequestHandler(CallToolRequestSchema, handleCallTool);
-      
+
       const transport = new StdioServerTransport();
       await server.connect(transport);
       logger.info('MCP server started successfully on stdio');
@@ -259,8 +259,8 @@ async function main(): Promise<void> {
 
         if (pathname === '/health' && req.method === 'GET') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            status: 'ok', 
+          res.end(JSON.stringify({
+            status: 'ok',
             dbConnected: db?.isConnected() || false,
             transport: 'sse'
           }));
@@ -270,32 +270,32 @@ async function main(): Promise<void> {
         if (pathname === '/sse' && req.method === 'GET') {
           // Add CORS headers to the SSE response
           res.setHeader('Access-Control-Allow-Origin', '*');
-          
+
           // Disable buffering for Nginx and other reverse proxies
           res.setHeader('X-Accel-Buffering', 'no');
           res.setHeader('Cache-Control', 'no-cache');
           res.setHeader('Connection', 'keep-alive');
-          
+
           // Gunakan absolute URL agar klien tidak salah *resolve* path relatif
           const protocol = req.headers['x-forwarded-proto'] || 'http';
           const host = req.headers['x-forwarded-host'] || req.headers.host;
           const absoluteMessageUrl = `${protocol}://${host}/message`;
-          
+
           const transport = new SSEServerTransport(absoluteMessageUrl, res);
 
           const server = new Server(
-            { name: 'mcp-sqlserver', version: '1.0.0' },
+            { name: 'mssql-mcp', version: '1.0.0' },
             { capabilities: { tools: {} } }
           );
-          
+
           server.setRequestHandler(ListToolsRequestSchema, handleListTools);
           server.setRequestHandler(CallToolRequestSchema, handleCallTool);
-          
+
           await server.connect(transport);
-          
+
           // Now that it's connected (and started), store the session
           transports.set(transport.sessionId, transport);
-          
+
           // Keep-alive ping every 15 seconds to prevent Traefik/Cloudflare from dropping idle connections
           const keepAlive = setInterval(() => {
             res.write(':keepalive\n\n');
@@ -343,7 +343,7 @@ async function main(): Promise<void> {
           req.on('data', chunk => {
             body += chunk.toString();
           });
-          
+
           req.on('end', async () => {
             try {
               const data = JSON.parse(body);

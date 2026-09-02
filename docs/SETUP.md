@@ -18,7 +18,7 @@ Complete step-by-step guide to set up and run MCP SQL Server locally or with Doc
 
 ```bash
 git clone https://github.com/ekoeryanto/mssql-mcp.git
-cd mcp-sqlserver
+cd mssql-mcp
 ```
 
 ### Step 2: Install Dependencies
@@ -100,8 +100,8 @@ bun start
 
 Server should output:
 ```
-[ISO_TIMESTAMP] [mcp-sqlserver] INFO: Starting MCP SQL Server
-[ISO_TIMESTAMP] [mcp-sqlserver] INFO: MCP server started successfully
+[ISO_TIMESTAMP] [mssql-mcp] INFO: Starting MCP SQL Server
+[ISO_TIMESTAMP] [mssql-mcp] INFO: MCP server started successfully
 ```
 
 ## Local Setup (npm/Node.js)
@@ -110,7 +110,7 @@ Server should output:
 
 ```bash
 git clone https://github.com/ekoeryanto/mssql-mcp.git
-cd mcp-sqlserver
+cd mssql-mcp
 npm install
 cp .env.example .env
 # Edit .env
@@ -301,7 +301,7 @@ sudo systemctl start docker  # Linux
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_SERVER_NAME` | mcp-sqlserver | Server identifier |
+| `MCP_SERVER_NAME` | mssql-mcp | Server identifier |
 | `LOG_LEVEL` | info | Logging level |
 
 ## Development Workflow

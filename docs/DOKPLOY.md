@@ -22,7 +22,7 @@ Guide lengkap untuk deploy MCP SQL Server di Dokploy.
 **Option A: GitHub**
 - Select **GitHub** as source
 - Connect your GitHub account
-- Select `mcp-sqlserver` repository
+- Select `mssql-mcp` repository
 - Branch: `main` (atau branch pilihan)
 
 **Option B: Git URL**
@@ -52,7 +52,7 @@ SQLSERVER_CONNECTION_POOL_MIN=2
 SQLSERVER_CONNECTION_POOL_MAX=10
 SQLSERVER_REQUEST_TIMEOUT=30000
 LOG_LEVEL=info
-MCP_SERVER_NAME=mcp-sqlserver
+MCP_SERVER_NAME=mssql-mcp
 ```
 
 ### Step 5: Port Configuration
@@ -74,9 +74,9 @@ MCP_SERVER_NAME=mcp-sqlserver
 
 ```bash
 # Di Dokploy, buka logs dan cari:
-[ISO_TIMESTAMP] [mcp-sqlserver] INFO: Starting MCP SQL Server
-[ISO_TIMESTAMP] [mcp-sqlserver] INFO: Connected to SQL Server
-[ISO_TIMESTAMP] [mcp-sqlserver] INFO: MCP server started successfully
+[ISO_TIMESTAMP] [mssql-mcp] INFO: Starting MCP SQL Server
+[ISO_TIMESTAMP] [mssql-mcp] INFO: Connected to SQL Server
+[ISO_TIMESTAMP] [mssql-mcp] INFO: MCP server started successfully
 ```
 
 ### Test Connection
@@ -223,7 +223,7 @@ Recommend settings:
 
 ### View Running Containers
 ```bash
-docker ps | grep mcp-sqlserver
+docker ps | grep mssql-mcp
 ```
 
 ### Check Container Logs

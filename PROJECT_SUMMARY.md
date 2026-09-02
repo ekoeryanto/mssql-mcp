@@ -25,7 +25,7 @@ A flexible, stable, and production-ready MCP server that enables seamless intera
 ## 📁 Project Structure
 
 ```
-mcp-sqlserver/
+mssql-mcp/
 ├── src/                          # TypeScript source code
 │   ├── index.ts                 # Main MCP server entry point
 │   ├── config/
@@ -69,7 +69,7 @@ mcp-sqlserver/
 ```bash
 # Clone repository
 git clone https://github.com/ekoeryanto/mssql-mcp.git
-cd mcp-sqlserver
+cd mssql-mcp
 
 # Install dependencies (Bun required)
 bun install
@@ -214,7 +214,7 @@ SQLSERVER_CONNECTION_POOL_MAX=10
 SQLSERVER_REQUEST_TIMEOUT=30000
 
 # Server
-MCP_SERVER_NAME=mcp-sqlserver
+MCP_SERVER_NAME=mssql-mcp
 LOG_LEVEL=info  # debug, info, warn, error
 ```
 

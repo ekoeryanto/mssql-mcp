@@ -66,4 +66,4 @@ jobs:
       with:
         context: .
         push: false
-        tags: mcp-sqlserver:latest
+        tags: mssql-mcp:latest

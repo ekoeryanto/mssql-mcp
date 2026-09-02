@@ -3,7 +3,7 @@ version: '3.8'
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: mcp-sqlserver-db
+    container_name: mssql-mcp-db
     environment:
       SA_PASSWORD: YourStrong@Password123
       ACCEPT_EULA: 'Y'
@@ -25,7 +25,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mcp-sqlserver-server
+    container_name: mssql-mcp-server
     depends_on:
       sqlserver:
         condition: service_healthy
@@ -41,7 +41,7 @@ services:
       SQLSERVER_CONNECTION_POOL_MAX: '10'
       SQLSERVER_REQUEST_TIMEOUT: '30000'
       LOG_LEVEL: info
-      MCP_SERVER_NAME: mcp-sqlserver
+      MCP_SERVER_NAME: mssql-mcp
     stdin_open: true
     tty: true
     networks:

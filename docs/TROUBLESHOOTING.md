@@ -420,7 +420,7 @@ bun scripts/test-connection.ts
 docker-compose logs -f
 
 # Check SQL Server
-docker exec mcp-sqlserver-db /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourPassword -Q "SELECT @@VERSION"
+docker exec mssql-mcp-db /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourPassword -Q "SELECT @@VERSION"
 
 # Check environment
 env | grep SQLSERVER

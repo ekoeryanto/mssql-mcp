@@ -57,6 +57,6 @@ export function loadConfig(): {
       requestTimeout: getEnvNumber('SQLSERVER_REQUEST_TIMEOUT', 30000),
     },
     logLevel: (process.env.LOG_LEVEL as LogLevel) || 'info',
-    serverName: getEnv('MCP_SERVER_NAME', 'mcp-sqlserver'),
+    serverName: getEnv('MCP_SERVER_NAME', 'mssql-mcp'),
   };
 }
