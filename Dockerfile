@@ -21,8 +21,8 @@ ENV SQLSERVER_USERNAME=sa
 ENV SQLSERVER_PASSWORD=
 ENV LOG_LEVEL=info
 
-# Explicitly configure MCP for HTTP/SSE mode inside Docker
-ENV MCP_TRANSPORT=sse
+# Explicitly configure MCP for Streamable HTTP mode inside Docker
+ENV MCP_TRANSPORT=http
 ENV PORT=3000
 EXPOSE 3000
 

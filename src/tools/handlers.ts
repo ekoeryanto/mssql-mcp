@@ -2,13 +2,15 @@
  * Tool handlers for MCP SQL Server
  */
 
-import type { QueryResult, ExecuteResult, MetadataResult, ProcedureResult, Logger, ToolInput } from '../types/index.js';
+import type { QueryResult, ExecuteResult, MetadataResult, ProcedureResult, Logger } from '../types/index.js';
 import type SqlServerConnectionManager from '../db/connection.js';
 
+const MUTATION_KEYWORDS = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE)\b/i;
+
 export class ToolHandlers {
-  private db: SqlServerConnectionManager;
-  private logger: Logger;
-  private allowMutations: boolean;
+  private readonly db: SqlServerConnectionManager;
+  private readonly logger: Logger;
+  private readonly allowMutations: boolean;
 
   constructor(db: SqlServerConnectionManager, logger: Logger, allowMutations: boolean) {
     this.db = db;
@@ -19,35 +21,22 @@ export class ToolHandlers {
   /**
    * Execute a SELECT query
    */
-  async handleQuery(input: ToolInput): Promise<QueryResult> {
+  async handleQuery(input: { query: string }): Promise<QueryResult> {
     try {
-      const { query } = input as { query: string };
+      const { query } = input;
 
-      if (!query || typeof query !== 'string') {
-        return {
-          success: false,
-          error: 'Query parameter is required and must be a string',
-        };
-      }
-
-      // Validate query starts with SELECT
-      const trimmedQuery = query.trim().toUpperCase();
-      if (!trimmedQuery.startsWith('SELECT')) {
+      if (!query.trim().toUpperCase().startsWith('SELECT')) {
         return {
           success: false,
           error: 'Only SELECT queries are supported. Use execute-statement for INSERT, UPDATE, DELETE.',
         };
       }
 
-      // Block mutations if not allowed
-      if (!this.allowMutations) {
-        const mutationRegex = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE)\b/i;
-        if (mutationRegex.test(query)) {
-          return {
-            success: false,
-            error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.',
-          };
-        }
+      if (!this.allowMutations && MUTATION_KEYWORDS.test(query)) {
+        return {
+          success: false,
+          error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.',
+        };
       }
 
       const result = await this.db.query(query);
@@ -70,26 +59,19 @@ export class ToolHandlers {
   /**
    * Execute INSERT, UPDATE, DELETE statements
    */
-  async handleExecute(input: ToolInput): Promise<ExecuteResult> {
+  async handleExecute(input: { statement: string; params?: Record<string, unknown> }): Promise<ExecuteResult> {
+    if (!this.allowMutations) {
+      return {
+        success: false,
+        error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.',
+      };
+    }
+
     try {
-      if (!this.allowMutations) {
-        return {
-          success: false,
-          error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.',
-        };
-      }
-      const { statement, params } = input as { statement: string; params?: Record<string, unknown> };
+      const { statement, params } = input;
 
-      if (!statement || typeof statement !== 'string') {
-        return {
-          success: false,
-          error: 'Statement parameter is required and must be a string',
-        };
-      }
-
-      // Validate statement type
-      const trimmedStatement = statement.trim().toUpperCase();
       const validStatements = ['INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP'];
+      const trimmedStatement = statement.trim().toUpperCase();
       if (!validStatements.some((s) => trimmedStatement.startsWith(s))) {
         return {
           success: false,
@@ -116,24 +98,12 @@ export class ToolHandlers {
   /**
    * Get database metadata
    */
-  async handleMetadata(input: ToolInput): Promise<MetadataResult> {
+  async handleMetadata(input: {
+    type: 'databases' | 'tables' | 'columns' | 'procedures';
+    filter?: string;
+  }): Promise<MetadataResult> {
     try {
-      const { type, filter } = input as { type: string; filter?: string };
-
-      if (!type || typeof type !== 'string') {
-        return {
-          success: false,
-          error: 'Type parameter is required (databases, tables, columns, procedures)',
-        };
-      }
-
-      const validTypes = ['databases', 'tables', 'columns', 'procedures'];
-      if (!validTypes.includes(type)) {
-        return {
-          success: false,
-          error: `Invalid type. Must be one of: ${validTypes.join(', ')}`,
-        };
-      }
+      const { type, filter } = input;
 
       if (type === 'columns' && !filter) {
         return {
@@ -142,7 +112,7 @@ export class ToolHandlers {
         };
       }
 
-      const data = await this.db.getMetadata(type as any, filter);
+      const data = await this.db.getMetadata(type, filter);
 
       return {
         success: true,
@@ -162,26 +132,19 @@ export class ToolHandlers {
   /**
    * Execute a stored procedure
    */
-  async handleExecuteProcedure(input: ToolInput): Promise<ProcedureResult> {
-    try {
-      if (!this.allowMutations) {
-        return {
-          success: false,
-          error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable executing procedures.',
-        };
-      }
-      const { name, params } = input as {
-        name: string;
-        params?: Record<string, { value: unknown; output?: boolean }>;
+  async handleExecuteProcedure(input: {
+    name: string;
+    params?: Record<string, { value?: unknown; output?: boolean }>;
+  }): Promise<ProcedureResult> {
+    if (!this.allowMutations) {
+      return {
+        success: false,
+        error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable executing procedures.',
       };
+    }
 
-      if (!name || typeof name !== 'string') {
-        return {
-          success: false,
-          error: 'Procedure name is required',
-        };
-      }
-
+    try {
+      const { name, params } = input;
       const result = await this.db.executeStoredProcedure(name, params);
 
       return {

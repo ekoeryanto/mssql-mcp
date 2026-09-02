@@ -4,7 +4,7 @@ This guide explains how to connect and configure popular AI assistants to use th
 
 The server supports two transport protocols:
 1. **Stdio (Local)** - The AI client runs the server on the same machine.
-2. **SSE (Remote)** - The AI client connects to the server hosted remotely via an HTTP URL.
+2. **Streamable HTTP (Remote)** - The AI client connects to the server hosted remotely at `/mcp`, per the current MCP spec.
 
 ---
 
@@ -12,13 +12,13 @@ The server supports two transport protocols:
 
 Antigravity IDE supports connecting to both local and remote MCP servers. The configuration is typically stored in the workspace directory under `.agents/mcp_config.json`.
 
-### Option A: Remote Server (SSE - Recommended for Cloud/Dokploy)
+### Option A: Remote Server (Streamable HTTP - Recommended for Cloud/Dokploy)
 ```json
 {
   "mcpServers": {
     "mssql-mcp-remote": {
-      "type": "sse",
-      "url": "https://api.your-domain.com/sse"
+      "type": "http",
+      "url": "https://api.your-domain.com/mcp"
     }
   }
 }
@@ -79,27 +79,33 @@ If you are running from source, you can configure it manually. Claude Desktop na
   }
 }
 ```
-*Note: Claude Desktop currently does not natively support providing an HTTP URL (SSE) directly in its config file. You must use `stdio`, which means the server code must be pulled locally to your machine.*
+*Note: Claude Desktop currently does not natively support providing a remote HTTP URL directly in its config file. You must use `stdio`, which means the server code must be pulled locally to your machine.*
 
 ---
 
 ## 3. Claude Code (CLI)
 
-[Claude Code](https://code.claude.com) is Anthropic's official command-line tool. It natively supports both remote (SSE) and local (Stdio) connections to MCP servers.
+[Claude Code](https://code.claude.com) is Anthropic's official command-line tool. It natively supports both remote (Streamable HTTP) and local (Stdio) connections to MCP servers.
 
-**Option A: Remote Server (SSE)**
-To add your deployed SQL Server MCP, run this command in your terminal:
+**Option A: Remote Server (Streamable HTTP)**
+The server exposes a stateless Streamable HTTP endpoint at `/mcp`:
 ```bash
-claude mcp add --transport http mssql-mcp https://api.your-domain.com/sse
+claude mcp add --transport http mssql-mcp https://api.your-domain.com/mcp -H "Authorization: Bearer YOUR_MCP_SERVER_AUTH_TOKEN"
 ```
-*Note: Even though the flag is `--transport http`, it correctly connects to our `/sse` endpoint.*
+*Note: Omit the `-H` header if `MCP_SERVER_AUTH_TOKEN` isn't set on the server.*
 
 **Option B: Local Server (Stdio)**
-If you are running the server locally, you can add it by specifying the execution command directly:
+If you are running the server locally, you can add it by specifying the execution command directly. Pass your SQL Server credentials with `-e` and force stdio transport with `MCP_TRANSPORT=stdio` (otherwise a `.env` file with `MCP_TRANSPORT=http` in the project directory will override it):
 ```bash
-claude mcp add mssql-local bun run /absolute/path/to/mssql-mcp/src/index.ts
+claude mcp add mssql-local \
+  -e MCP_TRANSPORT=stdio \
+  -e SQLSERVER_SERVER=localhost \
+  -e SQLSERVER_USERNAME=sa \
+  -e SQLSERVER_PASSWORD=YourStrongPassword \
+  -e SQLSERVER_DATABASE=master \
+  -- bun run /absolute/path/to/mssql-mcp/src/index.ts
 ```
-*(Make sure your `.env` variables are properly set in your environment before running Claude Code!)*
+*Note: the database connection is established lazily on the first tool call, so `claude mcp add` will report the server as connected even if SQL Server itself isn't reachable yet.*
 
 ---
 
@@ -110,8 +116,8 @@ Extensions like Cline (formerly Claude Dev) and Roo Code support standard MCP co
 **Configuration via IDE UI:**
 1. Open the MCP Servers tab in your extension.
 2. Add a new server.
-3. Select the transport type (SSE or Command/Stdio).
-   - **For SSE:** Enter your deployed URL (e.g., `https://api.your-domain.com/sse`).
+3. Select the transport type (HTTP or Command/Stdio).
+   - **For HTTP:** Enter your deployed URL (e.g., `https://api.your-domain.com/mcp`).
    - **For Command:** Enter the command `bun` and args `run /path/to/src/index.ts`. Add your database credentials in the environment variables section.
 
 **Configuration via File (e.g. `cline_mcp_settings.json`):**
@@ -137,6 +143,6 @@ Extensions like Cline (formerly Claude Dev) and Roo Code support standard MCP co
 
 ## Troubleshooting Connectivity
 
-1. **Permission Prompts:** If your AI client frequently asks for tool permissions (especially when using SSE), ensure that your reverse proxy (like Nginx, Traefik, or Cloudflare) is not dropping idle connections. The server implements a 15-second keep-alive ping to prevent this, but your proxy must support long-lived HTTP requests.
+1. **Permission Prompts:** If your AI client frequently asks for tool permissions over a remote connection, ensure that your reverse proxy (like Nginx, Traefik, or Cloudflare) is not dropping idle connections.
 2. **Path Issues (Local):** Always use absolute paths to your `src/index.ts` file in the `args` array when configuring `stdio`.
 3. **Environment Variables:** Make sure all required SQL Server environment variables are passed correctly to the AI client's configuration if running locally.

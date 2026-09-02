@@ -5,10 +5,28 @@
 import sql from 'mssql';
 import type { SqlServerConfig, Logger } from '../types/index.js';
 
+/**
+ * Infer a SQL Server type for a stored procedure output parameter from its
+ * JS value, since `mssql` requires an explicit `ISqlType` for output params
+ * (unlike input params, which can infer the type from the value alone).
+ */
+function inferSqlType(value: unknown): (() => sql.ISqlType) | sql.ISqlType {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? sql.Int : sql.Float;
+  }
+  if (typeof value === 'boolean') {
+    return sql.Bit;
+  }
+  if (value instanceof Date) {
+    return sql.DateTime;
+  }
+  return sql.NVarChar(sql.MAX);
+}
+
 export class SqlServerConnectionManager {
   private pool: sql.ConnectionPool | null = null;
-  private config: SqlServerConfig;
-  private logger: Logger;
+  private readonly config: SqlServerConfig;
+  private readonly logger: Logger;
   private isConnecting = false;
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
@@ -23,7 +41,7 @@ export class SqlServerConnectionManager {
    * Initialize connection pool
    */
   async connect(): Promise<void> {
-    if (this.pool && this.pool.connected) {
+    if (this.pool?.connected) {
       this.logger.info('Already connected to SQL Server');
       return;
     }
@@ -35,7 +53,7 @@ export class SqlServerConnectionManager {
         await new Promise((resolve) => setTimeout(resolve, 100));
         attempts++;
       }
-      if (this.pool && this.pool.connected) {
+      if (this.pool?.connected) {
         return;
       }
     }
@@ -88,7 +106,9 @@ export class SqlServerConnectionManager {
         return this.connect();
       }
 
-      throw new Error(`Failed to connect to SQL Server after ${this.MAX_RECONNECT_ATTEMPTS} attempts: ${error}`);
+      throw new Error(`Failed to connect to SQL Server after ${this.MAX_RECONNECT_ATTEMPTS} attempts: ${error}`, {
+        cause: error,
+      });
     } finally {
       this.isConnecting = false;
     }
@@ -145,7 +165,7 @@ export class SqlServerConnectionManager {
    */
   async executeStoredProcedure(
     procedureName: string,
-    params?: Record<string, { value: unknown; output?: boolean }>,
+    params?: Record<string, { value?: unknown; output?: boolean }>,
   ): Promise<{
     recordsets: unknown[][];
     recordset: Record<string, unknown>[] | null;
@@ -158,20 +178,24 @@ export class SqlServerConnectionManager {
       this.logger.debug('Executing stored procedure', { procedureName, params });
       const request = this.pool!.request();
 
-      // Add parameters
       if (params) {
         for (const [key, { value, output }] of Object.entries(params)) {
           if (output) {
-            request.output(key, value as any);
+            request.output(key, inferSqlType(value), value);
           } else {
-            request.input(key, value as any);
+            request.input(key, value);
           }
         }
       }
 
-      const result = await request.execute(procedureName);
+      const result = await request.execute<Record<string, unknown>>(procedureName);
       this.logger.debug('Stored procedure executed successfully', { rowsAffected: result.rowsAffected });
-      return result as any;
+      return {
+        recordsets: result.recordsets,
+        recordset: result.recordset ?? null,
+        output: result.output,
+        rowsAffected: result.rowsAffected,
+      };
     } catch (error) {
       this.logger.error('Stored procedure execution failed', error);
       throw error;
@@ -181,59 +205,67 @@ export class SqlServerConnectionManager {
   /**
    * Get database metadata
    */
-  async getMetadata(type: 'databases' | 'tables' | 'columns' | 'procedures', filter?: string) {
+  async getMetadata(
+    type: 'databases' | 'tables' | 'columns' | 'procedures',
+    filter?: string,
+  ): Promise<Record<string, unknown>[]> {
     await this.ensureConnected();
 
+    if (type === 'columns' && !filter) {
+      throw new Error('Table name required for columns query');
+    }
+
     try {
-      let sql = '';
+      const request = this.pool!.request();
+      let query: string;
 
       switch (type) {
         case 'databases':
-          sql = "SELECT name FROM sys.databases WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb')";
+          query = "SELECT name FROM sys.databases WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb')";
           break;
 
         case 'tables':
-          sql = `SELECT
+          query = `SELECT
             TABLE_SCHEMA as 'schema',
             TABLE_NAME as name,
             'TABLE' as type
           FROM INFORMATION_SCHEMA.TABLES
           WHERE TABLE_TYPE = 'BASE TABLE'`;
           if (filter) {
-            sql += ` AND TABLE_NAME LIKE '%${filter}%'`;
+            request.input('filter', sql.NVarChar, `%${filter}%`);
+            query += ' AND TABLE_NAME LIKE @filter';
           }
           break;
 
         case 'columns':
-          if (!filter) {
-            throw new Error('Table name required for columns query');
-          }
-          sql = `SELECT
+          request.input('tableName', sql.NVarChar, filter);
+          query = `SELECT
             COLUMN_NAME as name,
             DATA_TYPE as type,
             IS_NULLABLE as nullable,
             CHARACTER_MAXIMUM_LENGTH as maxLength,
-            COLUMNPROPERTY(OBJECT_ID('${filter}'), COLUMN_NAME, 'IsIdentity') as isIdentity,
+            COLUMNPROPERTY(OBJECT_ID(@tableName), COLUMN_NAME, 'IsIdentity') as isIdentity,
             COLUMN_DEFAULT as defaultValue
           FROM INFORMATION_SCHEMA.COLUMNS
-          WHERE TABLE_NAME = '${filter}'`;
+          WHERE TABLE_NAME = @tableName`;
           break;
 
         case 'procedures':
-          sql = `SELECT
+          query = `SELECT
             ROUTINE_SCHEMA as 'schema',
             ROUTINE_NAME as name,
             ROUTINE_TYPE as type
           FROM INFORMATION_SCHEMA.ROUTINES
           WHERE ROUTINE_TYPE = 'PROCEDURE'`;
           if (filter) {
-            sql += ` AND ROUTINE_NAME LIKE '%${filter}%'`;
+            request.input('filter', sql.NVarChar, `%${filter}%`);
+            query += ' AND ROUTINE_NAME LIKE @filter';
           }
           break;
       }
 
       this.logger.debug('Fetching metadata', { type, filter });
-      const result = await this.pool!.request().query(sql);
+      const result = await request.query(query);
       return result.recordset;
     } catch (error) {
       this.logger.error('Metadata fetch failed', error);

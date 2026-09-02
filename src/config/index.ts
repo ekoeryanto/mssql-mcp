@@ -4,10 +4,17 @@
 
 import type { SqlServerConfig, LogLevel } from '../types/index.js';
 
+const isDebug = process.env.LOG_LEVEL === 'debug';
+
+function debugLog(message: string): void {
+  if (isDebug) {
+    process.stderr.write(`\x1b[36m[CONFIG] ${message}\x1b[0m\n`);
+  }
+}
+
 function getEnv(key: string, defaultValue?: string): string {
   const value = process.env[key];
-  // Log untuk debugging
-  process.stderr.write(`\x1b[36m[CONFIG] ${key}=${value ? '***' : 'UNDEFINED'} (default: ${defaultValue || 'NONE'})\x1b[0m\n`);
+  debugLog(`${key}=${value ? '***' : 'UNDEFINED'} (default: ${defaultValue ?? 'NONE'})`);
 
   if (!value && defaultValue === undefined) {
     throw new Error(`Missing required environment variable: ${key}`);
@@ -18,7 +25,7 @@ function getEnv(key: string, defaultValue?: string): string {
 function getEnvNumber(key: string, defaultValue?: number): number {
   const value = process.env[key];
   if (value) {
-    return parseInt(value, 10);
+    return Number.parseInt(value, 10);
   }
   if (defaultValue !== undefined) {
     return defaultValue;
@@ -40,9 +47,12 @@ export function loadConfig(): {
   serverName: string;
   authToken?: string;
 } {
-  // Debug: log semua env variables
-  process.stderr.write('\x1b[36m[CONFIG] Loading configuration...\x1b[0m\n');
-  process.stderr.write(`\x1b[36m[CONFIG] Available env keys: ${Object.keys(process.env).filter(k => k.startsWith('SQLSERVER')).join(', ')}\x1b[0m\n`);
+  debugLog('Loading configuration...');
+  debugLog(
+    `Available env keys: ${Object.keys(process.env)
+      .filter((k) => k.startsWith('SQLSERVER'))
+      .join(', ')}`,
+  );
 
   return {
     sqlServer: {

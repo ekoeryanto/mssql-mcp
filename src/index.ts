@@ -5,193 +5,127 @@
  * Main entry point - Using modern MCP SDK approach
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import * as http from 'node:http';
+import { z } from 'zod';
 import { loadConfig } from './config/index.js';
 import SimpleLogger from './logger/index.js';
 import SqlServerConnectionManager from './db/connection.js';
 import ToolHandlers from './tools/handlers.js';
 
+const SERVER_NAME = 'mssql-mcp';
+const SERVER_VERSION = '1.2.0';
+
 // Configuration and logging
 const config = loadConfig();
-const logger = new SimpleLogger('mssql-mcp', config.logLevel);
+const logger = new SimpleLogger(SERVER_NAME, config.logLevel);
 
-// Database connection manager and tool handlers
+// Database connection manager and tool handlers, created lazily on first tool call
 let db: SqlServerConnectionManager | null = null;
 let handlers: ToolHandlers | null = null;
 
-/**
- * Initialize database connection and handlers
- */
-async function initializeDb(): Promise<void> {
-  if (db === null) {
+async function getHandlers(): Promise<ToolHandlers> {
+  if (!db || !handlers) {
     db = new SqlServerConnectionManager(config.sqlServer, logger);
     handlers = new ToolHandlers(db, logger, config.sqlServer.allowMutations);
     await db.connect();
   }
+  return handlers;
+}
+
+function toToolResult(result: unknown): CallToolResult {
+  return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 }
 
 /**
- * Define MCP tools
+ * Runs a tool handler, initializing the DB connection on first use and
+ * converting any thrown error into an MCP tool error result.
  */
-const tools = [
-  {
-    name: 'query',
-    description: 'Execute a SELECT query and retrieve results',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        query: {
-          type: 'string',
-          description: 'SQL SELECT query to execute',
-        },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'execute-statement',
-    description: 'Execute INSERT, UPDATE, DELETE, or DDL statements',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        statement: {
-          type: 'string',
-          description: 'SQL statement to execute (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP)',
-        },
-        params: {
-          type: 'object',
-          description: 'Optional parameters for parameterized queries',
-        },
-      },
-      required: ['statement'],
-    },
-  },
-  {
-    name: 'get-metadata',
-    description: 'Retrieve database metadata (databases, tables, columns, or procedures)',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        type: {
-          type: 'string',
-          enum: ['databases', 'tables', 'columns', 'procedures'],
-          description: 'Type of metadata to retrieve',
-        },
-        filter: {
-          type: 'string',
-          description: 'Optional filter (e.g., table name for columns query)',
-        },
-      },
-      required: ['type'],
-    },
-  },
-  {
-    name: 'execute-procedure',
-    description: 'Execute a stored procedure with optional input/output parameters',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        name: {
-          type: 'string',
-          description: 'Name of the stored procedure',
-        },
-        params: {
-          type: 'object',
-          description:
-            'Optional parameters object with structure: { paramName: { value: any, output?: boolean } }',
-        },
-      },
-      required: ['name'],
-    },
-  },
-  {
-    name: 'get-status',
-    description: 'Get current connection status and pool information',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {},
-    },
-  },
-];
-
-/**
- * Handle list tools request
- */
-async function handleListTools(_request: any): Promise<{ tools: typeof tools }> {
-  return { tools };
-}
-
-/**
- * Handle call tool request
- */
-async function handleCallTool(request: any): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const { name, arguments: args } = request.params;
-
+async function runTool<T>(fn: (handlers: ToolHandlers) => Promise<T>): Promise<CallToolResult> {
   try {
-    // Ensure database is initialized
-    await initializeDb();
-
-    if (!handlers) {
-      throw new Error('Handlers not initialized');
-    }
-
-    let result: unknown;
-
-    switch (name) {
-      case 'query':
-        result = await handlers.handleQuery(args as Record<string, unknown>);
-        break;
-
-      case 'execute-statement':
-        result = await handlers.handleExecute(args as Record<string, unknown>);
-        break;
-
-      case 'get-metadata':
-        result = await handlers.handleMetadata(args as Record<string, unknown>);
-        break;
-
-      case 'execute-procedure':
-        result = await handlers.handleExecuteProcedure(args as Record<string, unknown>);
-        break;
-
-      case 'get-status':
-        result = await handlers.handleGetStatus();
-        break;
-
-      default:
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Unknown tool: ${name}`,
-            },
-          ],
-        };
-    }
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(result, null, 2),
-        },
-      ],
-    };
+    const result = await fn(await getHandlers());
+    return toToolResult(result);
   } catch (error) {
     logger.error('Tool execution failed', error);
     return {
-      content: [
-        {
-          type: 'text',
-          text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        },
-      ],
+      content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }],
+      isError: true,
     };
   }
+}
+
+/**
+ * Create an MCP server instance wired up to the query/execute/metadata tools.
+ */
+function createMcpServer(): McpServer {
+  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
+
+  server.registerTool(
+    'query',
+    {
+      title: 'Query',
+      description: 'Execute a SELECT query and retrieve results',
+      inputSchema: { query: z.string().describe('SQL SELECT query to execute') },
+    },
+    async ({ query }) => runTool((h) => h.handleQuery({ query })),
+  );
+
+  server.registerTool(
+    'execute-statement',
+    {
+      title: 'Execute Statement',
+      description: 'Execute INSERT, UPDATE, DELETE, or DDL statements',
+      inputSchema: {
+        statement: z.string().describe('SQL statement to execute (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP)'),
+        params: z.record(z.string(), z.unknown()).optional().describe('Optional parameters for parameterized queries'),
+      },
+    },
+    async ({ statement, params }) => runTool((h) => h.handleExecute({ statement, params })),
+  );
+
+  server.registerTool(
+    'get-metadata',
+    {
+      title: 'Get Metadata',
+      description: 'Retrieve database metadata (databases, tables, columns, or procedures)',
+      inputSchema: {
+        type: z.enum(['databases', 'tables', 'columns', 'procedures']).describe('Type of metadata to retrieve'),
+        filter: z.string().optional().describe('Optional filter (e.g., table name for columns query)'),
+      },
+    },
+    async ({ type, filter }) => runTool((h) => h.handleMetadata({ type, filter })),
+  );
+
+  server.registerTool(
+    'execute-procedure',
+    {
+      title: 'Execute Procedure',
+      description: 'Execute a stored procedure with optional input/output parameters',
+      inputSchema: {
+        name: z.string().describe('Name of the stored procedure'),
+        params: z
+          .record(z.string(), z.object({ value: z.unknown(), output: z.boolean().optional() }))
+          .optional()
+          .describe('Optional parameters object: { paramName: { value: any, output?: boolean } }'),
+      },
+    },
+    async ({ name, params }) => runTool((h) => h.handleExecuteProcedure({ name, params })),
+  );
+
+  server.registerTool(
+    'get-status',
+    {
+      title: 'Get Status',
+      description: 'Get current connection status and pool information',
+      inputSchema: {},
+    },
+    async () => runTool((h) => h.handleGetStatus()),
+  );
+
+  return server;
 }
 
 /**
@@ -209,217 +143,208 @@ process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
 /**
+ * Start the server over stdio.
+ */
+async function startStdio(): Promise<void> {
+  const server = createMcpServer();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  logger.info('MCP server started successfully on stdio');
+}
+
+/**
+ * Start the server over HTTP, exposing the Streamable HTTP transport (/mcp).
+ */
+function startHttpServer(): void {
+  const serverHttp = http.createServer(async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
+      });
+      res.end();
+      return;
+    }
+
+    const url = new URL(req.url || '/', `http://${req.headers.host}`);
+    let pathname = url.pathname.replace(/\/$/, '');
+    if (pathname === '') pathname = '/';
+
+    if (pathname === '/health' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          status: 'ok',
+          dbConnected: db?.isConnected() || false,
+          transports: ['http'],
+        }),
+      );
+      return;
+    }
+
+    // Authentication Middleware
+    if (config.authToken) {
+      const authHeader = req.headers.authorization;
+      const queryToken = url.searchParams.get('token');
+      let isAuthenticated = false;
+
+      if (queryToken && queryToken === config.authToken) {
+        isAuthenticated = true;
+      } else if (authHeader) {
+        if (authHeader.startsWith('Bearer ')) {
+          const token = authHeader.substring(7);
+          isAuthenticated = token === config.authToken;
+        } else if (authHeader.startsWith('Basic ')) {
+          const b64 = authHeader.substring(6);
+          const decoded = Buffer.from(b64, 'base64').toString('utf8');
+          // Accept the token either as the username or the password part
+          const parts = decoded.split(':');
+          const password = parts.length > 1 ? parts[1] : parts[0];
+          const username = parts[0];
+          isAuthenticated = password === config.authToken || username === config.authToken;
+        }
+      }
+
+      if (!isAuthenticated) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'invalid_token',
+            error_description: '401 Unauthorized: Invalid or missing token',
+          }),
+        );
+        return;
+      }
+    }
+
+    // Streamable HTTP transport (MCP spec 2025-03-26+), used by `claude mcp add --transport http`
+    if (pathname === '/mcp') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      if (req.method !== 'POST') {
+        res.writeHead(405, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Method not allowed. This server runs in stateless mode: use POST.' },
+            id: null,
+          }),
+        );
+        return;
+      }
+
+      try {
+        // Stateless mode: a fresh server+transport per request, no session tracking needed.
+        const mcpServer = createMcpServer();
+        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+        await mcpServer.connect(transport);
+        await transport.handleRequest(req, res);
+        res.on('close', () => {
+          transport.close();
+          mcpServer.close();
+        });
+      } catch (error) {
+        logger.error('Error handling /mcp request', error);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: { code: -32603, message: 'Internal server error' },
+              id: null,
+            }),
+          );
+        }
+      }
+      return;
+    }
+
+    // Standard HTTP REST API endpoint for direct queries (outside of MCP)
+    if (pathname === '/query' && req.method === 'POST') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', 'application/json');
+
+      let body = '';
+      req.on('data', (chunk: Buffer) => {
+        body += chunk.toString();
+      });
+
+      req.on('end', async () => {
+        try {
+          const data = JSON.parse(body) as { query?: string };
+          if (!data.query) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: 'Missing "query" in request body' }));
+            return;
+          }
+
+          if (!db) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: 'Database not initialized' }));
+            return;
+          }
+
+          if (!config.sqlServer.allowMutations) {
+            const mutationRegex = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE)\b/i;
+            if (mutationRegex.test(data.query)) {
+              res.writeHead(403);
+              res.end(JSON.stringify({ error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.' }));
+              return;
+            }
+          }
+
+          const result = await db.query(data.query);
+          res.writeHead(200);
+          res.end(JSON.stringify({ success: true, data: result }));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          logger.error(`Error in /query: ${message}`);
+          res.writeHead(500);
+          res.end(JSON.stringify({ success: false, error: message }));
+        }
+      });
+      return;
+    }
+
+    logger.warn(`404 Not Found: ${req.method} ${req.url} (resolved pathname: ${pathname})`);
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
+  });
+
+  const port = Number.parseInt(process.env.PORT || '3000', 10);
+  serverHttp.listen(port, () => {
+    logger.info(`MCP HTTP server listening on port ${port} (Streamable HTTP: /mcp)`);
+  });
+}
+
+/**
  * Start the server
  */
 async function main(): Promise<void> {
   try {
     logger.info('Starting MCP SQL Server', { config: config.serverName });
 
-    // Validate configuration
     if (!config.sqlServer.server || !config.sqlServer.username || !config.sqlServer.password) {
       throw new Error('Missing required SQL Server configuration');
     }
 
-    // Initialize database connection
-    await initializeDb();
+    // Note: the database connection is established lazily on first tool call
+    // (see getHandlers), not here. Connecting eagerly would block the MCP
+    // handshake and make `claude mcp add` report a failed connection whenever
+    // SQL Server isn't reachable yet at startup.
 
-    // Default to 'stdio' so standard MCP clients work out of the box. 
-    // If the user wants HTTP/SSE, they can run it with MCP_TRANSPORT=sse
-    const mode = process.env.MCP_TRANSPORT === 'sse' ? 'sse' : 'stdio';
+    // Default to 'stdio' so standard MCP clients work out of the box.
+    // Run with MCP_TRANSPORT=http for the network transport (Streamable
+    // HTTP). MCP_TRANSPORT=sse is accepted as an alias for backwards
+    // compatibility with existing deployments, but only ever serves the
+    // Streamable HTTP endpoint now — the legacy SSE transport was removed.
+    const useHttp = process.env.MCP_TRANSPORT === 'sse' || process.env.MCP_TRANSPORT === 'http';
 
-    if (mode === 'stdio') {
-      // Create the MCP server
-      const server = new Server(
-        { name: 'mssql-mcp', version: '1.0.0' },
-        { capabilities: { tools: {} } }
-      );
-      server.setRequestHandler(ListToolsRequestSchema, handleListTools);
-      server.setRequestHandler(CallToolRequestSchema, handleCallTool);
-
-      const transport = new StdioServerTransport();
-      await server.connect(transport);
-      logger.info('MCP server started successfully on stdio');
+    if (useHttp) {
+      startHttpServer();
     } else {
-      const transports = new Map<string, SSEServerTransport>();
-
-      const serverHttp = http.createServer(async (req, res) => {
-        // Handle CORS preflight
-        if (req.method === 'OPTIONS') {
-          res.writeHead(204, {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          });
-          res.end();
-          return;
-        }
-
-        const url = new URL(req.url || '/', `http://${req.headers.host}`);
-        let pathname = url.pathname.replace(/\/$/, '');
-        if (pathname === '') pathname = '/';
-
-        if (pathname === '/health' && req.method === 'GET') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            status: 'ok',
-            dbConnected: db?.isConnected() || false,
-            transport: 'sse'
-          }));
-          return;
-        }
-
-        // Authentication Middleware
-        if (config.authToken && pathname !== '/message') {
-          const authHeader = req.headers.authorization;
-          const queryToken = url.searchParams.get('token');
-          let isAuthenticated = false;
-
-          if (queryToken && queryToken === config.authToken) {
-            isAuthenticated = true;
-          } else if (authHeader) {
-            if (authHeader.startsWith('Bearer ')) {
-              const token = authHeader.substring(7);
-              isAuthenticated = token === config.authToken;
-            } else if (authHeader.startsWith('Basic ')) {
-              const b64 = authHeader.substring(6);
-              const decoded = Buffer.from(b64, 'base64').toString('utf8');
-              // Accept the token either as the username or the password part
-              const parts = decoded.split(':');
-              const password = parts.length > 1 ? parts[1] : parts[0];
-              const username = parts[0];
-              isAuthenticated = password === config.authToken || username === config.authToken;
-            }
-          }
-
-          if (!isAuthenticated) {
-            res.writeHead(401, {
-              'Content-Type': 'application/json',
-            });
-            res.end(JSON.stringify({ 
-              error: 'invalid_token',
-              error_description: '401 Unauthorized: Invalid or missing token' 
-            }));
-            return;
-          }
-        }
-
-        if (pathname === '/sse' && req.method === 'GET') {
-          // Add CORS headers to the SSE response
-          res.setHeader('Access-Control-Allow-Origin', '*');
-
-          // Disable buffering for Nginx and other reverse proxies
-          res.setHeader('X-Accel-Buffering', 'no');
-          res.setHeader('Cache-Control', 'no-cache');
-          res.setHeader('Connection', 'keep-alive');
-
-          const transport = new SSEServerTransport('/message', res);
-
-          // Fix Race Condition: Store the session immediately so POST requests don't 404
-          transports.set(transport.sessionId, transport);
-
-          const server = new Server(
-            { name: 'mssql-mcp', version: '1.0.0' },
-            { capabilities: { tools: {} } }
-          );
-
-          server.setRequestHandler(ListToolsRequestSchema, handleListTools);
-          server.setRequestHandler(CallToolRequestSchema, handleCallTool);
-
-          await server.connect(transport);
-
-          // Keep-alive ping every 15 seconds to prevent Traefik/Cloudflare from dropping idle connections
-          const keepAlive = setInterval(() => {
-            res.write(':keepalive\n\n');
-          }, 15000);
-
-          res.on('close', () => {
-            clearInterval(keepAlive);
-            logger.info(`SSE Connection closed for session ${transport.sessionId}, deleting from transports`);
-            transports.delete(transport.sessionId);
-          });
-          return;
-        }
-
-        if (pathname === '/message' && req.method === 'POST') {
-          logger.info(`Received POST request on ${req.url}`);
-          const sessionId = url.searchParams.get('sessionId');
-          if (!sessionId) {
-            logger.warn(`Missing sessionId. req.url: ${req.url}`);
-            res.writeHead(400, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
-            res.end('Missing sessionId parameter');
-            return;
-          }
-
-          const transport = transports.get(sessionId);
-          if (!transport) {
-            logger.warn(`Session not found for id: ${sessionId}`);
-            res.writeHead(404, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
-            // Keep the exact error message that the client seems to be printing
-            res.end(`failed to connect (session ID: ${sessionId}): session not found`);
-            return;
-          }
-
-          // Add CORS headers to the POST response
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          await transport.handlePostMessage(req, res);
-          return;
-        }
-
-        // Standard HTTP REST API endpoint for direct queries (outside of MCP)
-        if (pathname === '/query' && req.method === 'POST') {
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Content-Type', 'application/json');
-
-          let body = '';
-          req.on('data', chunk => {
-            body += chunk.toString();
-          });
-
-          req.on('end', async () => {
-            try {
-              const data = JSON.parse(body);
-              if (!data.query) {
-                res.writeHead(400);
-                res.end(JSON.stringify({ error: 'Missing "query" in request body' }));
-                return;
-              }
-
-              if (!db) {
-                res.writeHead(500);
-                res.end(JSON.stringify({ error: 'Database not initialized' }));
-                return;
-              }
-
-              if (!config.sqlServer.allowMutations) {
-                const mutationRegex = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE)\b/i;
-                if (mutationRegex.test(data.query)) {
-                  res.writeHead(403);
-                  res.end(JSON.stringify({ error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.' }));
-                  return;
-                }
-              }
-
-              const result = await db.query(data.query);
-              res.writeHead(200);
-              res.end(JSON.stringify({ success: true, data: result }));
-            } catch (err: any) {
-              logger.error(`Error in /query: ${err.message}`);
-              res.writeHead(500);
-              res.end(JSON.stringify({ success: false, error: err.message }));
-            }
-          });
-          return;
-        }
-
-        logger.warn(`404 Not Found: ${req.method} ${req.url} (resolved pathname: ${pathname})`);
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Not Found');
-      });
-
-      const port = parseInt(process.env.PORT || '3000', 10);
-      serverHttp.listen(port, () => {
-        logger.info(`MCP HTTP server listening on port ${port} (SSE endpoint: /sse, Message endpoint: /message)`);
-      });
+      await startStdio();
     }
   } catch (error) {
     logger.error('Failed to start MCP server', error);
@@ -427,9 +352,8 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  logger.error('Fatal error', error);
-  process.exit(1);
-});
+// `main()` already catches and reports its own errors (see the try/catch
+// above), so this never rejects — top-level await, no `.catch` needed.
+await main();
 
 export { ToolHandlers, SqlServerConnectionManager };
