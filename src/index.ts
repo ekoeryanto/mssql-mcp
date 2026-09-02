@@ -210,23 +210,55 @@ process.on('SIGINT', shutdown);
  */
 async function main(): Promise<void> {
   try {
-    logger.info('Starting MCP SQL Server', { config: config.serverName });
+    logger.info('Starting MCP SQL Server');
 
-    // Validate configuration
-    if (!config.sqlServer.server || !config.sqlServer.username || !config.sqlServer.password) {
+    if (!config.sqlServer.server || !config.sqlServer.username) {
       throw new Error('Missing required SQL Server configuration');
     }
 
-    // Initialize database connection
     await initializeDb();
 
-    // Create and connect transport
-    const transport = new StdioServerTransport({
-      handleListTools,
-      handleCallTool,
+    // Setup stdin/stdout handlers
+    process.stdin.setEncoding('utf8');
+    
+    process.stdin.on('data', async (chunk: string) => {
+      try {
+        const message = JSON.parse(chunk);
+        
+        let result: any;
+        
+        if (message.method === 'tools/list') {
+          result = await handleListTools({} as any);
+        } else if (message.method === 'tools/call') {
+          result = await handleCallTool(message.params);
+        }
+
+        process.stdout.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: message.id,
+            result,
+          }) + '\n'
+        );
+      } catch (error) {
+        logger.error('Error processing message', error);
+        process.stdout.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: (message as any)?.id,
+            error: {
+              code: -32603,
+              message: error instanceof Error ? error.message : 'Error',
+            },
+          }) + '\n'
+        );
+      }
     });
 
-    await transport.start();
+    process.stdin.on('error', (error) => {
+      logger.error('Stdin error', error);
+      process.exit(1);
+    });
 
     logger.info('MCP server started successfully');
   } catch (error) {
