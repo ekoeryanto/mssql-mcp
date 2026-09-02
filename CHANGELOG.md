@@ -1,5 +1,11 @@
 # Changelog
 
+# [1.2.0](https://github.com/ekoeryanto/mssql-mcp/compare/1.1.0...1.2.0) (2026-09-02)
+
+### Features
+
+* add GitHub Actions workflow for automated releases and remove manual release-it configuration ([0e1d336](https://github.com/ekoeryanto/mssql-mcp/commit/0e1d336f09b7bef0232f1086ce08f1ccf89a1338))
+
 # 1.1.0 (2026-09-02)
 
 ### Bug Fixes
