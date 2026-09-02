@@ -1,7 +1,7 @@
 {
     "manifest_version": "0.3",
     "name": "mssql-mcp",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "description": "SQL Server MCP Tools",
     "author": {
         "name": "Eko Eryanto"

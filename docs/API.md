@@ -51,9 +51,10 @@ Execute SELECT queries and retrieve results.
 ```json
 {
   "success": false,
-  "error": "Query parameter is required and must be a string"
+  "error": "Only SELECT queries are supported. Use execute-statement for INSERT, UPDATE, DELETE."
 }
 ```
+*Note: a missing or wrong-typed `query` argument is rejected earlier, at the MCP protocol layer (invalid params), before it reaches the handler.*
 
 ---
 

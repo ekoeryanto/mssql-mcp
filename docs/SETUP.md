@@ -328,9 +328,6 @@ bun scripts/test-connection.ts
 When developing:
 
 ```bash
-# Format code
-bun run format
-
 # Check for issues
 bun run lint
 

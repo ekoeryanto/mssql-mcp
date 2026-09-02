@@ -72,6 +72,11 @@ docker-compose logs -f mcp-server
 docker-compose down
 ```
 
+The server listens on `http://localhost:3000/mcp` (Streamable HTTP). Connect a client with, e.g.:
+```bash
+claude mcp add --transport http mssql-mcp http://localhost:3000/mcp -H "Authorization: Bearer YourSuperSecretToken"
+```
+
 ## Configuration
 
 Environment variables configuration:
@@ -335,12 +340,6 @@ bun run test
 
 ```bash
 bun run lint
-```
-
-### Code Formatting
-
-```bash
-bun run format
 ```
 
 ### Building for Production

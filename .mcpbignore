@@ -1,14 +1,14 @@
 node_modules
 src
-tests
+scripts
+examples
 docs
 .git
 .github
 *.ts
 *.map
 tsconfig.json
-.eslintrc*
-.prettierrc*
+eslint.config.js
 bun.lock*
 Dockerfile
 docker-compose*

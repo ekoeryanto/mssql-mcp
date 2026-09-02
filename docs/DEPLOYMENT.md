@@ -64,9 +64,6 @@ bun run test
 # Lint code
 bun run lint
 
-# Format code
-bun run format
-
 # Test connection
 bun scripts/test-connection.ts
 ```

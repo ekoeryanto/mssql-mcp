@@ -53,12 +53,15 @@ SQLSERVER_CONNECTION_POOL_MAX=10
 SQLSERVER_REQUEST_TIMEOUT=30000
 LOG_LEVEL=info
 MCP_SERVER_NAME=mssql-mcp
+MCP_SERVER_AUTH_TOKEN=your-long-random-secret
 ```
+
+`MCP_TRANSPORT` tidak perlu di-set manual — `Dockerfile` sudah default ke `http` (Streamable HTTP di endpoint `/mcp`). `MCP_SERVER_AUTH_TOKEN` **wajib** diisi untuk deployment remote seperti ini, karena server akan expose port ke jaringan Dokploy — tanpa token, siapapun yang bisa reach container bisa memanggil tool-nya.
 
 ### Step 5: Port Configuration
 
-1. **Port Mapping**: Tidak perlu (MCP pakai stdio, bukan network port)
-2. Atau bisa map ke arbitrary port untuk internal use
+1. **Port Mapping**: Expose container port `3000` (nilai default `PORT`) ke Dokploy — server berjalan sebagai HTTP server, bukan stdio, saat `MCP_TRANSPORT=http`.
+2. Set **Health Check Path** ke `/health` jika Dokploy meminta health check endpoint.
 
 ### Step 6: Deploy
 
@@ -81,14 +84,17 @@ MCP_SERVER_NAME=mssql-mcp
 
 ### Test Connection
 
-Jika ada shell access ke container:
+Panggil endpoint `/health` dari luar container untuk memastikan server hidup:
 ```bash
-# Enter container
-dokploy exec <container-id> bash
+curl https://your-dokploy-domain.com/health
+# {"status":"ok","dbConnected":true,"transports":["http"]}
+```
 
-# Test connection
-node dist/index.js &
-# Cek apakah process running without errors
+Lalu tambahkan server-nya ke Claude Code untuk verifikasi end-to-end:
+```bash
+claude mcp add --transport http mssql-mcp https://your-dokploy-domain.com/mcp \
+  -H "Authorization: Bearer your-long-random-secret"
+claude mcp list   # harus menunjukkan "✔ Connected"
 ```
 
 ---
@@ -238,7 +244,8 @@ docker restart <container-id>
 
 ### Enter Container Shell
 ```bash
-docker exec -it <container-id> /bin/bash
+# Image berbasis Alpine, tidak ada bash — pakai sh
+docker exec -it <container-id> /bin/sh
 ```
 
 ---

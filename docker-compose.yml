@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -42,8 +40,9 @@ services:
       SQLSERVER_REQUEST_TIMEOUT: '30000'
       LOG_LEVEL: info
       MCP_SERVER_NAME: mssql-mcp
-    stdin_open: true
-    tty: true
+      MCP_SERVER_AUTH_TOKEN: YourSuperSecretToken
+    ports:
+      - '3000:3000'
     networks:
       - mcp-network
     restart: on-failure

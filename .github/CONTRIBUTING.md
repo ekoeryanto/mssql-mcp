@@ -33,10 +33,9 @@ Thank you for your interest in contributing! This document provides guidelines a
 3. Make your changes
 4. Write or update tests
 5. Run linter: `bun run lint`
-6. Run formatter: `bun run format`
-7. Commit with clear messages
-8. Push to your fork
-9. Create a pull request
+6. Commit with clear messages
+7. Push to your fork
+8. Create a pull request
 
 ## Development Setup
 
