@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "test": "echo \"Test suite coming soon\"",
     "lint": "eslint src --ext .ts",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "release": "release-it"
   },
   "keywords": [
     "mcp",
@@ -21,17 +22,19 @@
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.6.0",
-    "mssql": "^11.0.0"
+    "@modelcontextprotocol/sdk": "^0.6.1",
+    "mssql": "^11.0.1"
   },
   "devDependencies": {
-    "@types/mssql": "^9.1.0",
-    "@types/node": "^20.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.0.0",
-    "prettier": "^3.0.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.0.0"
+    "@release-it/conventional-changelog": "^12.0.0",
+    "@types/mssql": "^9.1.11",
+    "@types/node": "^20.19.43",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.57.1",
+    "prettier": "^3.9.6",
+    "release-it": "^21.0.2",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
   }
 }

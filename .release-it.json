@@ -1,0 +1,25 @@
+{
+  "git": {
+    "commitMessage": "chore(release): v${version}",
+    "requireCleanWorkingDir": false
+  },
+  "github": {
+    "release": true,
+    "releaseName": "v${version}",
+    "assets": [
+      "mssql-mcp.mcpb"
+    ]
+  },
+  "npm": {
+    "publish": false
+  },
+  "hooks": {
+    "after:bump": "bun run build && bun x -y @anthropic-ai/mcpb pack . mssql-mcp.mcpb"
+  },
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "preset": "angular",
+      "infile": "CHANGELOG.md"
+    }
+  }
+}
