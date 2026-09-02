@@ -42,6 +42,13 @@ export interface MetadataResult {
   error?: string;
 }
 
+export interface ServerConfig {
+  name: string;
+  version: string;
+  logLevel: string;
+  authToken?: string;
+}
+
 export interface TableInfo {
   name: string;
   type: string;

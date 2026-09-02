@@ -38,6 +38,7 @@ export function loadConfig(): {
   sqlServer: SqlServerConfig;
   logLevel: LogLevel;
   serverName: string;
+  authToken?: string;
 } {
   // Debug: log semua env variables
   process.stderr.write('\x1b[36m[CONFIG] Loading configuration...\x1b[0m\n');
@@ -59,5 +60,6 @@ export function loadConfig(): {
     },
     logLevel: (process.env.LOG_LEVEL as LogLevel) || 'info',
     serverName: getEnv('MCP_SERVER_NAME', 'mssql-mcp'),
+    authToken: process.env.MCP_SERVER_AUTH_TOKEN,
   };
 }

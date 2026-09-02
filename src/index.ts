@@ -267,6 +267,36 @@ async function main(): Promise<void> {
           return;
         }
 
+        // Authentication Middleware
+        if (config.authToken) {
+          const authHeader = req.headers.authorization;
+          let isAuthenticated = false;
+
+          if (authHeader) {
+            if (authHeader.startsWith('Bearer ')) {
+              const token = authHeader.substring(7);
+              isAuthenticated = token === config.authToken;
+            } else if (authHeader.startsWith('Basic ')) {
+              const b64 = authHeader.substring(6);
+              const decoded = Buffer.from(b64, 'base64').toString('utf8');
+              // Accept the token either as the username or the password part
+              const parts = decoded.split(':');
+              const password = parts.length > 1 ? parts[1] : parts[0];
+              const username = parts[0];
+              isAuthenticated = password === config.authToken || username === config.authToken;
+            }
+          }
+
+          if (!isAuthenticated) {
+            res.writeHead(401, {
+              'Content-Type': 'text/plain',
+              'WWW-Authenticate': 'Basic realm="MCP SQL Server"',
+            });
+            res.end('401 Unauthorized: Invalid or missing token');
+            return;
+          }
+        }
+
         if (pathname === '/sse' && req.method === 'GET') {
           // Add CORS headers to the SSE response
           res.setHeader('Access-Control-Allow-Origin', '*');
