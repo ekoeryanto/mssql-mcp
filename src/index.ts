@@ -272,8 +272,6 @@ async function main(): Promise<void> {
           res.setHeader('Access-Control-Allow-Origin', '*');
           
           const transport = new SSEServerTransport('/message', res);
-          await transport.start();
-          transports.set(transport.sessionId, transport);
 
           const server = new Server(
             { name: 'mcp-sqlserver', version: '1.0.0' },
@@ -284,6 +282,9 @@ async function main(): Promise<void> {
           server.setRequestHandler(CallToolRequestSchema, handleCallTool);
           
           await server.connect(transport);
+          
+          // Now that it's connected (and started), store the session
+          transports.set(transport.sessionId, transport);
           
           res.on('close', () => {
             transports.delete(transport.sessionId);
