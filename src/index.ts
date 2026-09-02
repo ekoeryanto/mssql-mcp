@@ -1,0 +1,247 @@
+#!/usr/bin/env node
+
+/**
+ * MCP Server for Microsoft SQL Server
+ * Main entry point
+ */
+
+import { Server } from 'mcp';
+import { StdioServerTransport } from 'mcp/server/stdio';
+import type { Tool, TextContent } from 'mcp/types';
+import { loadConfig } from './config/index.js';
+import SimpleLogger from './logger/index.js';
+import SqlServerConnectionManager from './db/connection.js';
+import ToolHandlers from './tools/handlers.js';
+
+// Configuration and logging
+const config = loadConfig();
+const logger = new SimpleLogger('mcp-sqlserver', config.logLevel);
+
+// Database connection manager and tool handlers
+let db: SqlServerConnectionManager | null = null;
+let handlers: ToolHandlers | null = null;
+
+/**
+ * Initialize database connection and handlers
+ */
+async function initializeDb(): Promise<void> {
+  if (db === null) {
+    db = new SqlServerConnectionManager(config.sqlServer, logger);
+    handlers = new ToolHandlers(db, logger);
+    await db.connect();
+  }
+}
+
+/**
+ * Define MCP tools
+ */
+const tools: Tool[] = [
+  {
+    name: 'query',
+    description: 'Execute a SELECT query and retrieve results',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'SQL SELECT query to execute',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'execute-statement',
+    description: 'Execute INSERT, UPDATE, DELETE, or DDL statements',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        statement: {
+          type: 'string',
+          description: 'SQL statement to execute (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP)',
+        },
+        params: {
+          type: 'object',
+          description: 'Optional parameters for parameterized queries',
+        },
+      },
+      required: ['statement'],
+    },
+  },
+  {
+    name: 'get-metadata',
+    description: 'Retrieve database metadata (databases, tables, columns, or procedures)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['databases', 'tables', 'columns', 'procedures'],
+          description: 'Type of metadata to retrieve',
+        },
+        filter: {
+          type: 'string',
+          description: 'Optional filter (e.g., table name for columns query)',
+        },
+      },
+      required: ['type'],
+    },
+  },
+  {
+    name: 'execute-procedure',
+    description: 'Execute a stored procedure with optional input/output parameters',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Name of the stored procedure',
+        },
+        params: {
+          type: 'object',
+          description:
+            'Optional parameters object with structure: { paramName: { value: any, output?: boolean } }',
+        },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'get-status',
+    description: 'Get current connection status and pool information',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+];
+
+/**
+ * Create and configure MCP server
+ */
+const server = new Server({
+  name: config.serverName,
+  version: '1.0.0',
+});
+
+/**
+ * Register tools
+ */
+server.setRequestHandler('tools/list', async () => {
+  return { tools };
+});
+
+server.setRequestHandler('tools/call', async (request) => {
+  const { name, arguments: args } = request as { name: string; arguments: Record<string, unknown> };
+
+  try {
+    // Ensure database is initialized
+    await initializeDb();
+
+    if (!handlers) {
+      throw new Error('Handlers not initialized');
+    }
+
+    let result: unknown;
+
+    switch (name) {
+      case 'query':
+        result = await handlers.handleQuery(args);
+        break;
+
+      case 'execute-statement':
+        result = await handlers.handleExecute(args);
+        break;
+
+      case 'get-metadata':
+        result = await handlers.handleMetadata(args);
+        break;
+
+      case 'execute-procedure':
+        result = await handlers.handleExecuteProcedure(args);
+        break;
+
+      case 'get-status':
+        result = await handlers.handleGetStatus();
+        break;
+
+      default:
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Unknown tool: ${name}`,
+            },
+          ],
+          isError: true,
+        };
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
+  } catch (error) {
+    logger.error('Tool execution failed', error);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+});
+
+/**
+ * Handle graceful shutdown
+ */
+async function shutdown(): Promise<void> {
+  logger.info('Shutting down MCP server');
+  if (db) {
+    await db.disconnect();
+  }
+  process.exit(0);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+/**
+ * Start the server
+ */
+async function main(): Promise<void> {
+  try {
+    logger.info('Starting MCP SQL Server', { config: config.serverName });
+
+    // Validate configuration
+    if (!config.sqlServer.server || !config.sqlServer.username || !config.sqlServer.password) {
+      throw new Error('Missing required SQL Server configuration');
+    }
+
+    // Initialize database connection
+    await initializeDb();
+
+    // Start the server with stdio transport
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+
+    logger.info('MCP server started successfully');
+  } catch (error) {
+    logger.error('Failed to start MCP server', error);
+    process.exit(1);
+  }
+}
+
+main().catch((error) => {
+  logger.error('Fatal error', error);
+  process.exit(1);
+});
+
+export { server, ToolHandlers, SqlServerConnectionManager };

@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mcp-sqlserver-db
+    environment:
+      SA_PASSWORD: YourStrong@Password123
+      ACCEPT_EULA: 'Y'
+      MSSQL_AGENT_ENABLED: 'true'
+    ports:
+      - '1433:1433'
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Password123 -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - mcp-network
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcp-sqlserver-server
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      SQLSERVER_SERVER: sqlserver
+      SQLSERVER_PORT: 1433
+      SQLSERVER_DATABASE: master
+      SQLSERVER_USERNAME: sa
+      SQLSERVER_PASSWORD: YourStrong@Password123
+      SQLSERVER_ENCRYPT: 'false'
+      SQLSERVER_TRUST_SERVER_CERTIFICATE: 'true'
+      SQLSERVER_CONNECTION_POOL_MIN: '2'
+      SQLSERVER_CONNECTION_POOL_MAX: '10'
+      SQLSERVER_REQUEST_TIMEOUT: '30000'
+      LOG_LEVEL: info
+      MCP_SERVER_NAME: mcp-sqlserver
+    stdin_open: true
+    tty: true
+    networks:
+      - mcp-network
+    restart: on-failure
+
+volumes:
+  sqlserver_data:
+    driver: local
+
+networks:
+  mcp-network:
+    driver: bridge

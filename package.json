@@ -1,0 +1,37 @@
+{
+  "name": "mcp-sqlserver",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server for Microsoft SQL Server",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "echo \"Test suite coming soon\"",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "keywords": [
+    "mcp",
+    "sqlserver",
+    "model-context-protocol",
+    "database"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "mcp": "^1.0.0",
+    "mssql": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/mssql": "^9.1.0",
+    "typescript": "^5.0.0",
+    "tsx": "^4.0.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "prettier": "^3.0.0"
+  }
+}
