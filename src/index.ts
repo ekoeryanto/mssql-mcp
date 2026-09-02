@@ -271,7 +271,12 @@ async function main(): Promise<void> {
           // Add CORS headers to the SSE response
           res.setHeader('Access-Control-Allow-Origin', '*');
           
-          const transport = new SSEServerTransport('/message', res);
+          // Gunakan absolute URL agar klien tidak salah *resolve* path relatif
+          const protocol = req.headers['x-forwarded-proto'] || 'http';
+          const host = req.headers['x-forwarded-host'] || req.headers.host;
+          const absoluteMessageUrl = `${protocol}://${host}/message`;
+          
+          const transport = new SSEServerTransport(absoluteMessageUrl, res);
 
           const server = new Server(
             { name: 'mcp-sqlserver', version: '1.0.0' },
@@ -287,14 +292,17 @@ async function main(): Promise<void> {
           transports.set(transport.sessionId, transport);
           
           res.on('close', () => {
+            logger.info(`SSE Connection closed for session ${transport.sessionId}, deleting from transports`);
             transports.delete(transport.sessionId);
           });
           return;
         }
 
         if (pathname === '/message' && req.method === 'POST') {
+          logger.info(`Received POST request on ${req.url}`);
           const sessionId = url.searchParams.get('sessionId');
           if (!sessionId) {
+            logger.warn(`Missing sessionId. req.url: ${req.url}`);
             res.writeHead(400, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
             res.end('Missing sessionId parameter');
             return;
@@ -302,8 +310,10 @@ async function main(): Promise<void> {
 
           const transport = transports.get(sessionId);
           if (!transport) {
+            logger.warn(`Session not found for id: ${sessionId}`);
             res.writeHead(404, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
-            res.end('Session not found');
+            // Keep the exact error message that the client seems to be printing
+            res.end(`failed to connect (session ID: ${sessionId}): session not found`);
             return;
           }
 
