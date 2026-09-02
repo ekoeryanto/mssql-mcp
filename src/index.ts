@@ -314,6 +314,9 @@ async function main(): Promise<void> {
 
           const transport = new SSEServerTransport('/message', res);
 
+          // Fix Race Condition: Store the session immediately so POST requests don't 404
+          transports.set(transport.sessionId, transport);
+
           const server = new Server(
             { name: 'mssql-mcp', version: '1.0.0' },
             { capabilities: { tools: {} } }
@@ -323,9 +326,6 @@ async function main(): Promise<void> {
           server.setRequestHandler(CallToolRequestSchema, handleCallTool);
 
           await server.connect(transport);
-
-          // Now that it's connected (and started), store the session
-          transports.set(transport.sessionId, transport);
 
           // Keep-alive ping every 15 seconds to prevent Traefik/Cloudflare from dropping idle connections
           const keepAlive = setInterval(() => {
