@@ -68,7 +68,7 @@ mcp-sqlserver/
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/mcp-sqlserver.git
+git clone https://github.com/ekoeryanto/mssql-mcp.git
 cd mcp-sqlserver
 
 # Install dependencies (Bun required)

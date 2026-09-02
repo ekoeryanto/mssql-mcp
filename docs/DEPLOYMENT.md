@@ -23,7 +23,7 @@ Comprehensive guide for deploying MCP SQL Server in various environments.
 
 1. **Clone Repository**
 ```bash
-git clone https://github.com/yourusername/mcp-sqlserver.git
+git clone https://github.com/ekoeryanto/mssql-mcp.git
 cd mcp-sqlserver
 ```
 

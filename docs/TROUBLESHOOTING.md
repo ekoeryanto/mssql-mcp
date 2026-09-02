@@ -433,6 +433,6 @@ docker network inspect mcp-network
 
 ## Still Need Help?
 
-- GitHub Issues: https://github.com/yourusername/mcp-sqlserver/issues
-- Discussions: https://github.com/yourusername/mcp-sqlserver/discussions
+- GitHub Issues: https://github.com/ekoeryanto/mssql-mcp/issues
+- Discussions: https://github.com/ekoeryanto/mssql-mcp/discussions
 - Documentation: See docs/ directory
