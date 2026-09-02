@@ -14,7 +14,7 @@ COPY src ./src
 COPY tsconfig.json ./
 
 # Build TypeScript
-RUN bun build ./src/index.ts --outdir ./dist --target node
+# RUN bun build ./src/index.ts --outdir ./dist --target node
 
 # Runtime stage
 FROM oven/bun:1
@@ -34,9 +34,5 @@ ENV SQLSERVER_USERNAME=sa
 ENV SQLSERVER_PASSWORD=
 ENV LOG_LEVEL=info
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD node dist/index.js --version 2>/dev/null || exit 1
-
 # Run the server with node (bukan bun)
-CMD ["node", "dist/index.js"]
+CMD ["bun", "src/index.ts"]
