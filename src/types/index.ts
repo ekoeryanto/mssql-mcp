@@ -101,3 +101,61 @@ export interface Logger {
   warn(message: string, data?: unknown): void;
   error(message: string, error?: unknown): void;
 }
+
+export interface SkillRow {
+  tool_name: string;
+  description: string;
+  keywords: string | null;
+  generated_prompt: string;
+}
+
+export interface SkillDefinition {
+  generated_prompt: string;
+  generated_sql: string;
+}
+
+export interface SaveSkillInput {
+  tool_name: string;
+  description: string;
+  keywords?: string;
+  generated_prompt: string;
+  generated_sql: string;
+}
+
+export interface SkillSqlValidationResult {
+  valid: boolean;
+  error?: string;
+}
+
+export interface SkillsStore {
+  listSkills(): Promise<SkillRow[]>;
+  getSkillDefinition(toolName: string): Promise<SkillDefinition | null>;
+  executeParameterized(
+    sqlText: string,
+    params: Record<string, unknown>,
+  ): Promise<{ recordset: Record<string, unknown>[] | null }>;
+  validateSkillSql(
+    sqlText: string,
+    dummyParams: Record<string, unknown>,
+  ): Promise<SkillSqlValidationResult>;
+  upsertSkill(skill: SaveSkillInput): Promise<void>;
+}
+
+export interface JsonSchemaProperty {
+  type?: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export interface JsonSchemaObject {
+  type?: string;
+  properties?: Record<string, JsonSchemaProperty>;
+  required?: string[];
+  [key: string]: unknown;
+}
+
+export interface McpToolDef {
+  name: string;
+  description: string;
+  inputSchema: JsonSchemaObject;
+}
