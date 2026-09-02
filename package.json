@@ -23,6 +23,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.1",
+    "eventsource": "^5.1.1",
     "mssql": "^11.0.1"
   },
   "devDependencies": {

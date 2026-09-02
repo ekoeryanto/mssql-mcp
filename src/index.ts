@@ -271,9 +271,12 @@ async function main(): Promise<void> {
         // Authentication Middleware
         if (config.authToken) {
           const authHeader = req.headers.authorization;
+          const queryToken = url.searchParams.get('token');
           let isAuthenticated = false;
 
-          if (authHeader) {
+          if (queryToken && queryToken === config.authToken) {
+            isAuthenticated = true;
+          } else if (authHeader) {
             if (authHeader.startsWith('Bearer ')) {
               const token = authHeader.substring(7);
               isAuthenticated = token === config.authToken;
