@@ -6,6 +6,9 @@ import type { SqlServerConfig, LogLevel } from '../types/index.js';
 
 function getEnv(key: string, defaultValue?: string): string {
   const value = process.env[key];
+  // Log untuk debugging
+  process.stderr.write(`\x1b[36m[CONFIG] ${key}=${value ? '***' : 'UNDEFINED'} (default: ${defaultValue || 'NONE'})\x1b[0m\n`);
+
   if (!value && defaultValue === undefined) {
     throw new Error(`Missing required environment variable: ${key}`);
   }
@@ -36,13 +39,17 @@ export function loadConfig(): {
   logLevel: LogLevel;
   serverName: string;
 } {
+  // Debug: log semua env variables
+  process.stderr.write('\x1b[36m[CONFIG] Loading configuration...\x1b[0m\n');
+  process.stderr.write(`\x1b[36m[CONFIG] Available env keys: ${Object.keys(process.env).filter(k => k.startsWith('SQLSERVER')).join(', ')}\x1b[0m\n`);
+
   return {
     sqlServer: {
       server: getEnv('SQLSERVER_SERVER', 'localhost'),
       port: getEnvNumber('SQLSERVER_PORT', 1433),
       database: getEnv('SQLSERVER_DATABASE', 'master'),
-      username: getEnv('SQLSERVER_USERNAME'),
-      password: getEnv('SQLSERVER_PASSWORD'),
+      username: getEnv('SQLSERVER_USERNAME', 'sa'),  // Add default
+      password: getEnv('SQLSERVER_PASSWORD', ''),    // Don't throw if empty
       encrypt: getEnvBoolean('SQLSERVER_ENCRYPT', false),
       trustServerCertificate: getEnvBoolean('SQLSERVER_TRUST_SERVER_CERTIFICATE', true),
       connectionPoolMin: getEnvNumber('SQLSERVER_CONNECTION_POOL_MIN', 2),

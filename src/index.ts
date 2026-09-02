@@ -5,8 +5,11 @@
  * Main entry point - Using modern MCP SDK approach
  */
 
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import type { CallToolRequest, ListToolsRequest } from '@modelcontextprotocol/sdk/types.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import * as http from 'node:http';
 import { loadConfig } from './config/index.js';
 import SimpleLogger from './logger/index.js';
 import SqlServerConnectionManager from './db/connection.js';
@@ -118,15 +121,15 @@ const tools = [
 /**
  * Handle list tools request
  */
-async function handleListTools(request: ListToolsRequest): Promise<{ tools: typeof tools }> {
+async function handleListTools(request: any): Promise<{ tools: typeof tools }> {
   return { tools };
 }
 
 /**
  * Handle call tool request
  */
-async function handleCallTool(request: CallToolRequest): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const { name, arguments: args } = request;
+async function handleCallTool(request: any): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { name, arguments: args } = request.params;
 
   try {
     // Ensure database is initialized
@@ -210,57 +213,114 @@ process.on('SIGINT', shutdown);
  */
 async function main(): Promise<void> {
   try {
-    logger.info('Starting MCP SQL Server');
+    logger.info('Starting MCP SQL Server', { config: config.serverName });
 
-    if (!config.sqlServer.server || !config.sqlServer.username) {
+    // Validate configuration
+    if (!config.sqlServer.server || !config.sqlServer.username || !config.sqlServer.password) {
       throw new Error('Missing required SQL Server configuration');
     }
 
+    // Initialize database connection
     await initializeDb();
 
-    // Setup stdin/stdout handlers
-    process.stdin.setEncoding('utf8');
-    
-    process.stdin.on('data', async (chunk: string) => {
-      try {
-        const message = JSON.parse(chunk);
-        
-        let result: any;
-        
-        if (message.method === 'tools/list') {
-          result = await handleListTools({} as any);
-        } else if (message.method === 'tools/call') {
-          result = await handleCallTool(message.params);
+    // Default to 'stdio' so standard MCP clients work out of the box. 
+    // If the user wants HTTP/SSE, they can run it with MCP_TRANSPORT=sse
+    const mode = process.env.MCP_TRANSPORT === 'sse' ? 'sse' : 'stdio';
+
+    if (mode === 'stdio') {
+      // Create the MCP server
+      const server = new Server(
+        { name: 'mcp-sqlserver', version: '1.0.0' },
+        { capabilities: { tools: {} } }
+      );
+      server.setRequestHandler(ListToolsRequestSchema, handleListTools);
+      server.setRequestHandler(CallToolRequestSchema, handleCallTool);
+      
+      const transport = new StdioServerTransport();
+      await server.connect(transport);
+      logger.info('MCP server started successfully on stdio');
+    } else {
+      const transports = new Map<string, SSEServerTransport>();
+
+      const serverHttp = http.createServer(async (req, res) => {
+        // Handle CORS preflight
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          });
+          res.end();
+          return;
         }
 
-        process.stdout.write(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: message.id,
-            result,
-          }) + '\n'
-        );
-      } catch (error) {
-        logger.error('Error processing message', error);
-        process.stdout.write(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: (message as any)?.id,
-            error: {
-              code: -32603,
-              message: error instanceof Error ? error.message : 'Error',
-            },
-          }) + '\n'
-        );
-      }
-    });
+        const url = new URL(req.url || '/', `http://${req.headers.host}`);
+        const pathname = url.pathname;
 
-    process.stdin.on('error', (error) => {
-      logger.error('Stdin error', error);
-      process.exit(1);
-    });
+        if (pathname === '/health' && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ 
+            status: 'ok', 
+            dbConnected: db?.isConnected() || false,
+            transport: 'sse'
+          }));
+          return;
+        }
 
-    logger.info('MCP server started successfully');
+        if (pathname === '/sse' && req.method === 'GET') {
+          // Add CORS headers to the SSE response
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          
+          const transport = new SSEServerTransport('/message', res);
+          await transport.start();
+          transports.set(transport.sessionId, transport);
+
+          const server = new Server(
+            { name: 'mcp-sqlserver', version: '1.0.0' },
+            { capabilities: { tools: {} } }
+          );
+          
+          server.setRequestHandler(ListToolsRequestSchema, handleListTools);
+          server.setRequestHandler(CallToolRequestSchema, handleCallTool);
+          
+          await server.connect(transport);
+          
+          res.on('close', () => {
+            transports.delete(transport.sessionId);
+          });
+          return;
+        }
+
+        if (pathname === '/message' && req.method === 'POST') {
+          const sessionId = url.searchParams.get('sessionId');
+          if (!sessionId) {
+            res.writeHead(400, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+            res.end('Missing sessionId parameter');
+            return;
+          }
+
+          const transport = transports.get(sessionId);
+          if (!transport) {
+            res.writeHead(404, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+            res.end('Session not found');
+            return;
+          }
+
+          // Add CORS headers to the POST response
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          await transport.handlePostMessage(req, res);
+          return;
+        }
+
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+      });
+
+      const port = parseInt(process.env.PORT || '3000', 10);
+      serverHttp.listen(port, () => {
+        logger.info(`MCP HTTP server listening on port ${port} (SSE endpoint: /sse, Message endpoint: /message)`);
+      });
+    }
   } catch (error) {
     logger.error('Failed to start MCP server', error);
     process.exit(1);

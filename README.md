@@ -28,7 +28,7 @@ A flexible and stable Model Context Protocol (MCP) server for Microsoft SQL Serv
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/ekoeryanto/mssql-mcp.git
+git clone https://github.com/yourusername/mcp-sqlserver.git
 cd mcp-sqlserver
 ```
 
@@ -386,8 +386,8 @@ MIT License - see LICENSE file for details
 ## Support
 
 For issues and questions:
-- GitHub Issues: [Create an issue](https://github.com/ekoeryanto/mssql-mcp/issues)
-- Discussions: [Start a discussion](https://github.com/ekoeryanto/mssql-mcp/discussions)
+- GitHub Issues: [Create an issue](https://github.com/yourusername/mcp-sqlserver/issues)
+- Discussions: [Start a discussion](https://github.com/yourusername/mcp-sqlserver/discussions)
 
 ## References
 

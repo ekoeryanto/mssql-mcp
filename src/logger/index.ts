@@ -31,33 +31,45 @@ export class SimpleLogger implements Logger {
   private formatMessage(level: string, message: string, data?: unknown): string {
     const timestamp = this.formatTime();
     const dataStr = data ? `\n${JSON.stringify(data, null, 2)}` : '';
-    return `[${timestamp}] [${this.name}] ${level.toUpperCase()}: ${message}${dataStr}`;
+    
+    // ANSI color codes
+    const colors: Record<string, string> = {
+      debug: '\x1b[90m', // Gray
+      info: '\x1b[36m',  // Cyan
+      warn: '\x1b[33m',  // Yellow
+      error: '\x1b[31m', // Red
+    };
+    const reset = '\x1b[0m';
+    const color = colors[level.toLowerCase()] || reset;
+
+    return `${color}[${timestamp}] [${this.name}] ${level.toUpperCase()}: ${message}${dataStr}${reset}`;
   }
 
   debug(message: string, data?: unknown): void {
     if (this.shouldLog('debug')) {
-      console.debug(this.formatMessage('debug', message, data));
+      process.stderr.write(this.formatMessage('debug', message, data) + '\n');
     }
   }
 
   info(message: string, data?: unknown): void {
     if (this.shouldLog('info')) {
-      console.log(this.formatMessage('info', message, data));
+      process.stderr.write(this.formatMessage('info', message, data) + '\n');
     }
   }
 
   warn(message: string, data?: unknown): void {
     if (this.shouldLog('warn')) {
-      console.warn(this.formatMessage('warn', message, data));
+      process.stderr.write(this.formatMessage('warn', message, data) + '\n');
     }
   }
 
   error(message: string, error?: unknown): void {
     if (this.shouldLog('error')) {
       const errorStr = error instanceof Error ? error.message : String(error);
-      console.error(this.formatMessage('error', message, errorStr));
+      process.stderr.write(this.formatMessage('error', message, errorStr) + '\n');
     }
   }
 }
 
 export default SimpleLogger;
+

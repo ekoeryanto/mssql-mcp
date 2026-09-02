@@ -1,38 +1,33 @@
-# use the official Bun image
-# see all versions at https://hub.docker.com/r/oven/bun/tags
-FROM oven/bun:1 AS base
-WORKDIR /usr/src/app
+# Use the official alpine image for a significantly smaller footprint
+FROM oven/bun:1-alpine
 
-# install dependencies into temp directory
-# this will cache them and speed up future builds
-FROM base AS install
-RUN mkdir -p /temp/dev
-COPY package.json bun.lock /temp/dev/
-RUN cd /temp/dev && bun install --frozen-lockfile
-
-# install with --production (exclude devDependencies)
-RUN mkdir -p /temp/prod
-COPY package.json bun.lock /temp/prod/
-RUN cd /temp/prod && bun install --frozen-lockfile --production
-
-# copy node_modules from temp directory
-# then copy all (non-ignored) project files into the image
-FROM base AS prerelease
-COPY --from=install /temp/dev/node_modules node_modules
-COPY . .
-
-# [optional] tests & build
-ENV NODE_ENV=production
-# RUN bun test
-# RUN bun run build
-
-# copy production dependencies and source code into final image
-FROM base AS release
-COPY --from=install /temp/prod/node_modules node_modules
-# COPY --from=prerelease /usr/src/app/index.ts .
-COPY --from=prerelease . .
-
-# run the app
+# Use non-root user for security
 USER bun
-# EXPOSE 3000/tcp
-ENTRYPOINT [ "bun", "run", "src/index.ts" ]
+WORKDIR /app
+
+# Copy dependency files first to leverage Docker layer caching
+COPY --chown=bun:bun package.json bun.lock* ./
+RUN bun install --production
+
+# Copy source code
+COPY --chown=bun:bun src ./src
+COPY --chown=bun:bun tsconfig.json ./
+
+# Environment configuration for SQL Server
+ENV SQLSERVER_SERVER=localhost
+ENV SQLSERVER_PORT=1433
+ENV SQLSERVER_DATABASE=master
+ENV SQLSERVER_USERNAME=sa
+ENV SQLSERVER_PASSWORD=
+ENV LOG_LEVEL=info
+
+# Explicitly configure MCP for HTTP/SSE mode inside Docker
+ENV MCP_TRANSPORT=sse
+ENV PORT=3000
+EXPOSE 3000
+
+# Use bun's native fetch for healthcheck instead of installing curl
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD bun -e "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
+CMD ["bun", "run", "src/index.ts"]

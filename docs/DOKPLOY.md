@@ -26,7 +26,7 @@ Guide lengkap untuk deploy MCP SQL Server di Dokploy.
 - Branch: `main` (atau branch pilihan)
 
 **Option B: Git URL**
-- Input Git URL: `https://github.com/yourusername/mcp-sqlserver.git`
+- Input Git URL: `https://github.com/ekoeryanto/mssql-mcp.git`
 - Branch: `main`
 
 ### Step 3: Build Configuration
