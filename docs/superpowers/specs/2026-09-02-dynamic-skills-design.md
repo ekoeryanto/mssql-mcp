@@ -55,6 +55,37 @@ CREATE TABLE tb_mcp_skills (
 );
 ```
 
+## `generated_prompt`: schema *and* prompt
+
+`generated_prompt` is a JSON Schema string, but its name is deliberate: it
+is the only channel an AI client reads to decide *how* to call a skill
+(MCP sends `inputSchema` — this column, parsed — to the client via
+`tools/list`; a client's model reads each property's `description` to know
+what value to supply). It is not purely a validation contract.
+
+Three columns, three different questions an AI client needs answered, each
+served by a different column:
+
+| Column | Answers | Example for "laporan tunggakan bulan X" |
+|---|---|---|
+| `description` + `keywords` | *Which* tool should I use? (browsing `tools/list`) | "Ambil daftar pelanggan menunggak untuk bulan & tahun tertentu. (Keywords: tunggakan, arrears, laporan bulanan)" |
+| `generated_prompt` | *How* do I fill in its arguments? (per property) | `{"bulan": {"type":"integer","description":"Bulan laporan, 1-12"}, "tahun": {"type":"integer","description":"Tahun laporan, contoh 2026"}}` |
+| `generated_sql` | (used by the server only, never seen by the AI client) | `SELECT ... WHERE bulan_tagihan=@bulan AND tahun_tagihan=@tahun` |
+
+Consequence: when a skill is authored from a vague instruction (e.g. "buat
+skill laporan tunggakan bulan X" with no further spec), the authoring AI —
+via `save-skill` — is responsible for inventing well-described parameters,
+not just correctly-typed ones. A schema of `{"bulan": {"type":"integer"}}`
+with no `description` technically validates calls but defeats the point:
+a future AI session calling this tool still has to guess what "bulan" means,
+its valid range, and its relationship to the rest of the skill.
+
+To make this a structural guarantee rather than a hope, `save-skill`
+additionally rejects (no DB write) any `generated_prompt` where a property
+under `properties` is missing a non-empty `description`. This is checked
+alongside the JSON-parse check, before the transaction+rollback SQL
+validation.
+
 ## Architecture
 
 ### Why drop `McpServer` for the tool-registration layer
@@ -127,13 +158,18 @@ SqlServerConnectionManager` and `logger: Logger`:
   step below.
 - `saveSkill(db, logger, input: { tool_name; description; keywords?;
   generated_prompt; generated_sql }): Promise<CallToolResult>` — rejects (as
-  `isError: true`, no DB write) if: `tool_name` collides with a static tool
-  name; `generated_prompt` isn't valid JSON; or `validateSkillSql()` (run
-  with `buildDummyArgs(parsedPrompt)`) reports `valid: false` — in which case
-  the DB's own error message is surfaced verbatim so the caller (typically an
-  AI client) can see exactly what's wrong (bad table/column name, syntax
-  error, etc.) and retry. On success, calls `upsertSkill()` and returns a
-  confirmation result.
+  `isError: true`, no DB write), checked in this order:
+  1. `tool_name` collides with a static tool name.
+  2. `generated_prompt` isn't valid JSON, or isn't a JSON Schema object with
+     a `properties` map.
+  3. Any entry in `properties` has no non-empty `description` — message
+     names the offending property so the caller can fix just that one.
+  4. `validateSkillSql()` (run with `buildDummyArgs(parsedPrompt)`) reports
+     `valid: false` — the DB's own error message is surfaced verbatim so the
+     caller (typically an AI client) can see exactly what's wrong (bad
+     table/column name, syntax error, etc.) and retry.
+
+  On success, calls `upsertSkill()` and returns a confirmation result.
 
 ### `src/index.ts` changes
 
@@ -155,7 +191,7 @@ SqlServerConnectionManager` and `logger: Logger`:
       "tool_name": { "type": "string", "description": "Unique snake/kebab-case tool identifier" },
       "description": { "type": "string" },
       "keywords": { "type": "string", "description": "Comma-separated keywords" },
-      "generated_prompt": { "type": "string", "description": "JSON Schema (as a string) describing this tool's input arguments" },
+      "generated_prompt": { "type": "string", "description": "JSON Schema (as a string) describing this tool's input arguments. Every property MUST have its own non-empty \"description\" — this is what a future AI session reads to know what value to supply, so write it as if explaining the parameter to someone who has never seen this skill before." },
       "generated_sql": { "type": "string", "description": "Parameterized SQL using @paramName placeholders matching generated_prompt's properties" }
     },
     "required": ["tool_name", "description", "generated_prompt", "generated_sql"]
@@ -213,6 +249,7 @@ SqlServerConnectionManager` and `logger: Logger`:
 | SQL execution fails (call) | `isError: true`, driver error message |
 | `save-skill` name collision | `isError: true`, no DB write |
 | `save-skill` invalid `generated_prompt` JSON | `isError: true`, no DB write |
+| `save-skill` property missing `description` | `isError: true`, names the property, no DB write |
 | `save-skill` SQL fails validation (rollback) | `isError: true`, DB error message, no DB write |
 
 ## Testing
