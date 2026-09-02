@@ -296,7 +296,13 @@ async function main(): Promise<void> {
           // Now that it's connected (and started), store the session
           transports.set(transport.sessionId, transport);
           
+          // Keep-alive ping every 15 seconds to prevent Traefik/Cloudflare from dropping idle connections
+          const keepAlive = setInterval(() => {
+            res.write(':keepalive\n\n');
+          }, 15000);
+
           res.on('close', () => {
+            clearInterval(keepAlive);
             logger.info(`SSE Connection closed for session ${transport.sessionId}, deleting from transports`);
             transports.delete(transport.sessionId);
           });
@@ -325,6 +331,43 @@ async function main(): Promise<void> {
           // Add CORS headers to the POST response
           res.setHeader('Access-Control-Allow-Origin', '*');
           await transport.handlePostMessage(req, res);
+          return;
+        }
+
+        // Standard HTTP REST API endpoint for direct queries (outside of MCP)
+        if (pathname === '/query' && req.method === 'POST') {
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Content-Type', 'application/json');
+
+          let body = '';
+          req.on('data', chunk => {
+            body += chunk.toString();
+          });
+          
+          req.on('end', async () => {
+            try {
+              const data = JSON.parse(body);
+              if (!data.query) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: 'Missing "query" in request body' }));
+                return;
+              }
+
+              if (!db) {
+                res.writeHead(500);
+                res.end(JSON.stringify({ error: 'Database not initialized' }));
+                return;
+              }
+
+              const result = await db.query(data.query, data.parameters || []);
+              res.writeHead(200);
+              res.end(JSON.stringify({ success: true, data: result }));
+            } catch (err: any) {
+              logger.error(`Error in /query: ${err.message}`);
+              res.writeHead(500);
+              res.end(JSON.stringify({ success: false, error: err.message }));
+            }
+          });
           return;
         }
 
