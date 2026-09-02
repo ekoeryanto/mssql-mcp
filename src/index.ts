@@ -271,6 +271,11 @@ async function main(): Promise<void> {
           // Add CORS headers to the SSE response
           res.setHeader('Access-Control-Allow-Origin', '*');
           
+          // Disable buffering for Nginx and other reverse proxies
+          res.setHeader('X-Accel-Buffering', 'no');
+          res.setHeader('Cache-Control', 'no-cache');
+          res.setHeader('Connection', 'keep-alive');
+          
           // Gunakan absolute URL agar klien tidak salah *resolve* path relatif
           const protocol = req.headers['x-forwarded-proto'] || 'http';
           const host = req.headers['x-forwarded-host'] || req.headers.host;
