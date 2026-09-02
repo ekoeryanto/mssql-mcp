@@ -8,10 +8,12 @@ import type SqlServerConnectionManager from '../db/connection.js';
 export class ToolHandlers {
   private db: SqlServerConnectionManager;
   private logger: Logger;
+  private allowMutations: boolean;
 
-  constructor(db: SqlServerConnectionManager, logger: Logger) {
+  constructor(db: SqlServerConnectionManager, logger: Logger, allowMutations: boolean) {
     this.db = db;
     this.logger = logger;
+    this.allowMutations = allowMutations;
   }
 
   /**
@@ -37,6 +39,17 @@ export class ToolHandlers {
         };
       }
 
+      // Block mutations if not allowed
+      if (!this.allowMutations) {
+        const mutationRegex = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE)\b/i;
+        if (mutationRegex.test(query)) {
+          return {
+            success: false,
+            error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.',
+          };
+        }
+      }
+
       const result = await this.db.query(query);
 
       return {
@@ -59,6 +72,12 @@ export class ToolHandlers {
    */
   async handleExecute(input: ToolInput): Promise<ExecuteResult> {
     try {
+      if (!this.allowMutations) {
+        return {
+          success: false,
+          error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.',
+        };
+      }
       const { statement, params } = input as { statement: string; params?: Record<string, unknown> };
 
       if (!statement || typeof statement !== 'string') {
@@ -145,6 +164,12 @@ export class ToolHandlers {
    */
   async handleExecuteProcedure(input: ToolInput): Promise<ProcedureResult> {
     try {
+      if (!this.allowMutations) {
+        return {
+          success: false,
+          error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable executing procedures.',
+        };
+      }
       const { name, params } = input as {
         name: string;
         params?: Record<string, { value: unknown; output?: boolean }>;

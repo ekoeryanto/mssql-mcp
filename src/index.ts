@@ -29,7 +29,7 @@ let handlers: ToolHandlers | null = null;
 async function initializeDb(): Promise<void> {
   if (db === null) {
     db = new SqlServerConnectionManager(config.sqlServer, logger);
-    handlers = new ToolHandlers(db, logger);
+    handlers = new ToolHandlers(db, logger, config.sqlServer.allowMutations);
     await db.connect();
   }
 }
@@ -357,6 +357,15 @@ async function main(): Promise<void> {
                 res.writeHead(500);
                 res.end(JSON.stringify({ error: 'Database not initialized' }));
                 return;
+              }
+
+              if (!config.sqlServer.allowMutations) {
+                const mutationRegex = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE)\b/i;
+                if (mutationRegex.test(data.query)) {
+                  res.writeHead(403);
+                  res.end(JSON.stringify({ error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.' }));
+                  return;
+                }
               }
 
               const result = await db.query(data.query, data.parameters || []);

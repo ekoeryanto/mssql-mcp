@@ -18,7 +18,7 @@ Antigravity IDE supports connecting to both local and remote MCP servers. The co
   "mcpServers": {
     "mssql-mcp-remote": {
       "type": "sse",
-      "url": "https://mssql-mcp.api.tirtapatriot.net/sse"
+      "url": "https://api.your-domain.com/sse"
     }
   }
 }
@@ -42,7 +42,17 @@ Antigravity IDE supports connecting to both local and remote MCP servers. The co
 
 ## 2. Claude Desktop
 
-Claude Desktop natively supports the Model Context Protocol using the **Stdio** transport. It launches the server as a background process.
+Claude Desktop supports adding MCP extensions either via the Settings GUI (using an `.mcpb` bundle) or manually via a configuration file.
+
+### Option A: GUI Installation (via `.mcpb` file)
+If you have a compiled `.mcpb` (MCP Bundle) extension file for this server:
+1. Navigate to **Settings > Extensions** on Claude Desktop.
+2. Click **"Advanced settings"** and find the **Extension Developer** section.
+3. Click **"Install Extension…"**
+4. Select the `.mcpb` file and follow the prompts to install.
+
+### Option B: Manual Configuration (Stdio)
+If you are running from source, you can configure it manually. Claude Desktop natively supports the Model Context Protocol using the **Stdio** transport by launching the server as a background process.
 
 **Config Location:**
 - **Mac:** `~/Library/Application Support/Claude/claude_desktop_config.json`
@@ -73,7 +83,27 @@ Claude Desktop natively supports the Model Context Protocol using the **Stdio** 
 
 ---
 
-## 3. Cursor / Cline / Roo (VS Code Extensions)
+## 3. Claude Code (CLI)
+
+[Claude Code](https://code.claude.com) is Anthropic's official command-line tool. It natively supports both remote (SSE) and local (Stdio) connections to MCP servers.
+
+**Option A: Remote Server (SSE)**
+To add your deployed SQL Server MCP, run this command in your terminal:
+```bash
+claude mcp add --transport http mssql-mcp https://api.your-domain.com/sse
+```
+*Note: Even though the flag is `--transport http`, it correctly connects to our `/sse` endpoint.*
+
+**Option B: Local Server (Stdio)**
+If you are running the server locally, you can add it by specifying the execution command directly:
+```bash
+claude mcp add mssql-local bun run /absolute/path/to/mssql-mcp/src/index.ts
+```
+*(Make sure your `.env` variables are properly set in your environment before running Claude Code!)*
+
+---
+
+## 4. Cursor / Cline / Roo (VS Code Extensions)
 
 Extensions like Cline (formerly Claude Dev) and Roo Code support standard MCP configurations, which are compatible with Claude Desktop's format.
 
@@ -81,7 +111,7 @@ Extensions like Cline (formerly Claude Dev) and Roo Code support standard MCP co
 1. Open the MCP Servers tab in your extension.
 2. Add a new server.
 3. Select the transport type (SSE or Command/Stdio).
-   - **For SSE:** Enter your deployed URL (e.g., `https://mssql-mcp.api.tirtapatriot.net/sse`).
+   - **For SSE:** Enter your deployed URL (e.g., `https://api.your-domain.com/sse`).
    - **For Command:** Enter the command `bun` and args `run /path/to/src/index.ts`. Add your database credentials in the environment variables section.
 
 **Configuration via File (e.g. `cline_mcp_settings.json`):**

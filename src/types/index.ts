@@ -10,6 +10,7 @@ export interface SqlServerConfig {
   password: string;
   encrypt: boolean;
   trustServerCertificate: boolean;
+  allowMutations: boolean;
   connectionPoolMin?: number;
   connectionPoolMax?: number;
   requestTimeout?: number;

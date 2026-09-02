@@ -52,6 +52,7 @@ export function loadConfig(): {
       password: getEnv('SQLSERVER_PASSWORD', ''),    // Don't throw if empty
       encrypt: getEnvBoolean('SQLSERVER_ENCRYPT', false),
       trustServerCertificate: getEnvBoolean('SQLSERVER_TRUST_SERVER_CERTIFICATE', true),
+      allowMutations: getEnvBoolean('SQLSERVER_ALLOW_MUTATIONS', false),
       connectionPoolMin: getEnvNumber('SQLSERVER_CONNECTION_POOL_MIN', 2),
       connectionPoolMax: getEnvNumber('SQLSERVER_CONNECTION_POOL_MAX', 10),
       requestTimeout: getEnvNumber('SQLSERVER_REQUEST_TIMEOUT', 30000),

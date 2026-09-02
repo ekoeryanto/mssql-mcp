@@ -1,0 +1,84 @@
+{
+    "manifest_version": "0.3",
+    "name": "mssql-mcp",
+    "version": "1.0.0",
+    "description": "SQL Server MCP Tools",
+    "author": {
+        "name": "Eko Eryanto"
+    },
+    "server": {
+        "type": "node",
+        "entry_point": "dist/bundle.js",
+        "mcp_config": {
+            "command": "node",
+            "args": [
+                "${__dirname}/dist/bundle.js"
+            ],
+            "env": {
+                "SQLSERVER_SERVER": "${user_config.server}",
+                "SQLSERVER_PORT": "${user_config.port}",
+                "SQLSERVER_USERNAME": "${user_config.username}",
+                "SQLSERVER_PASSWORD": "${user_config.password}",
+                "SQLSERVER_DATABASE": "${user_config.database}",
+                "SQLSERVER_ENCRYPT": "${user_config.encrypt}",
+                "SQLSERVER_TRUST_SERVER_CERTIFICATE": "${user_config.trust_cert}",
+                "SQLSERVER_ALLOW_MUTATIONS": "${user_config.allow_mutations}"
+            }
+        }
+    },
+    "user_config": {
+        "server": {
+            "type": "string",
+            "title": "SQL Server Hostname",
+            "description": "The hostname or IP address of your SQL Server",
+            "required": true
+        },
+        "port": {
+            "type": "string",
+            "title": "SQL Server Port",
+            "description": "Port number (usually 1433)",
+            "default": "1433",
+            "required": false
+        },
+        "database": {
+            "type": "string",
+            "title": "Database Name",
+            "description": "Name of the target database",
+            "required": true
+        },
+        "username": {
+            "type": "string",
+            "title": "Database Username",
+            "description": "Username to connect to the database (preferably read-only)",
+            "required": true
+        },
+        "password": {
+            "type": "string",
+            "title": "Database Password",
+            "description": "Password for the database user",
+            "sensitive": true,
+            "required": true
+        },
+        "encrypt": {
+            "type": "string",
+            "title": "Encrypt Connection",
+            "description": "Set to 'true' or 'false' (Azure SQL requires true)",
+            "default": "false",
+            "required": false
+        },
+        "trust_cert": {
+            "type": "string",
+            "title": "Trust Server Certificate",
+            "description": "Set to 'true' if using a self-signed certificate on your SQL Server",
+            "default": "true",
+            "required": false
+        },
+        "allow_mutations": {
+            "type": "string",
+            "title": "Allow Database Mutations",
+            "description": "DANGER: Set to 'true' ONLY if you want to allow AI to execute INSERT, UPDATE, DELETE, and DROP commands.",
+            "default": "false",
+            "required": false
+        }
+    }
+}
