@@ -289,10 +289,10 @@ async function main(): Promise<void> {
 
           if (!isAuthenticated) {
             res.writeHead(401, {
-              'Content-Type': 'text/plain',
+              'Content-Type': 'application/json',
               'WWW-Authenticate': 'Basic realm="MCP SQL Server"',
             });
-            res.end('401 Unauthorized: Invalid or missing token');
+            res.end(JSON.stringify({ error: '401 Unauthorized: Invalid or missing token' }));
             return;
           }
         }
