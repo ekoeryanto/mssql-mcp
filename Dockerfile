@@ -1,3 +1,6 @@
+
+
+
 # Build stage
 FROM oven/bun:1 AS builder
 
@@ -14,7 +17,7 @@ COPY src ./src
 COPY tsconfig.json ./
 
 # Build TypeScript
-RUN bun build ./src/index.ts --outdir ./dist --target node
+# RUN bun build ./src/index.ts --outdir ./dist --target node
 
 # Runtime stage
 FROM oven/bun:1
@@ -31,7 +34,7 @@ COPY .env.example .env
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD bun dist/index.js || exit 1
+  CMD bun src/index.ts || exit 1
 
 # Run the server
-CMD ["node", "dist/index.js"]
+CMD ["node", "src/index.ts"]
