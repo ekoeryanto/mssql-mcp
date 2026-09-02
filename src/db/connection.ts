@@ -3,7 +3,14 @@
  */
 
 import sql from 'mssql';
-import type { SqlServerConfig, Logger } from '../types/index.js';
+import type {
+  SqlServerConfig,
+  Logger,
+  SkillRow,
+  SkillDefinition,
+  SaveSkillInput,
+  SkillSqlValidationResult,
+} from '../types/index.js';
 
 /**
  * Infer a SQL Server type for a stored procedure output parameter from its
@@ -316,6 +323,104 @@ export class SqlServerConnectionManager {
       connected: this.pool.connected,
       totalConnections: this.pool.size,
     };
+  }
+
+  /**
+   * List active dynamic skills for tools/list.
+   */
+  async listSkills(): Promise<SkillRow[]> {
+    await this.ensureConnected();
+    const result = await this.pool!.request().query(
+      'SELECT tool_name, description, keywords, generated_prompt FROM tb_mcp_skills WHERE is_active = 1',
+    );
+    return result.recordset as SkillRow[];
+  }
+
+  /**
+   * Fetch one active skill's prompt+SQL for tools/call.
+   */
+  async getSkillDefinition(toolName: string): Promise<SkillDefinition | null> {
+    await this.ensureConnected();
+    const request = this.pool!.request();
+    request.input('toolName', sql.VarChar, toolName);
+    const result = await request.query(
+      'SELECT generated_prompt, generated_sql FROM tb_mcp_skills WHERE tool_name = @toolName AND is_active = 1',
+    );
+    const row = result.recordset[0] as { generated_prompt: string; generated_sql: string } | undefined;
+    return row ? { generated_prompt: row.generated_prompt, generated_sql: row.generated_sql } : null;
+  }
+
+  /**
+   * Run a skill's generated_sql with the given arguments bound as
+   * parameters (never string-interpolated).
+   */
+  async executeParameterized(
+    sqlText: string,
+    params: Record<string, unknown>,
+  ): Promise<{ recordset: Record<string, unknown>[] | null }> {
+    await this.ensureConnected();
+    const request = this.pool!.request();
+    for (const [key, value] of Object.entries(params)) {
+      request.input(key, value);
+    }
+    const result = await request.query(sqlText);
+    return { recordset: result.recordset ?? null };
+  }
+
+  /**
+   * Dry-run a candidate skill's SQL inside a transaction with dummy
+   * parameter values, then always roll back — never commits, regardless
+   * of outcome. Used by save-skill to catch bad table/column names before
+   * a skill becomes callable.
+   */
+  async validateSkillSql(
+    sqlText: string,
+    dummyParams: Record<string, unknown>,
+  ): Promise<SkillSqlValidationResult> {
+    await this.ensureConnected();
+    const transaction = new sql.Transaction(this.pool!);
+    try {
+      await transaction.begin();
+      const request = new sql.Request(transaction);
+      for (const [key, value] of Object.entries(dummyParams)) {
+        request.input(key, value);
+      }
+      await request.query(sqlText);
+      return { valid: true };
+    } catch (error) {
+      return { valid: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      await transaction.rollback().catch(() => {
+        // Nothing to do — validation never commits either way.
+      });
+    }
+  }
+
+  /**
+   * Insert or update a skill by tool_name, always leaving it active.
+   */
+  async upsertSkill(skill: SaveSkillInput): Promise<void> {
+    await this.ensureConnected();
+    const request = this.pool!.request();
+    request.input('toolName', sql.VarChar, skill.tool_name);
+    request.input('description', sql.NVarChar, skill.description);
+    request.input('keywords', sql.NVarChar, skill.keywords ?? null);
+    request.input('generatedPrompt', sql.NVarChar(sql.MAX), skill.generated_prompt);
+    request.input('generatedSql', sql.NVarChar(sql.MAX), skill.generated_sql);
+    await request.query(`
+      IF EXISTS (SELECT 1 FROM tb_mcp_skills WHERE tool_name = @toolName)
+        UPDATE tb_mcp_skills
+        SET description = @description,
+            keywords = @keywords,
+            generated_prompt = @generatedPrompt,
+            generated_sql = @generatedSql,
+            is_active = 1,
+            updated_at = SYSUTCDATETIME()
+        WHERE tool_name = @toolName
+      ELSE
+        INSERT INTO tb_mcp_skills (tool_name, description, keywords, generated_prompt, generated_sql, is_active)
+        VALUES (@toolName, @description, @keywords, @generatedPrompt, @generatedSql, 1);
+    `);
   }
 }
 
