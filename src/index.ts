@@ -117,89 +117,6 @@ const tools: Tool[] = [
 ];
 
 /**
- * Create and configure MCP server
- */
-const server = new Server({
-  name: config.serverName,
-  version: '1.0.0',
-});
-
-/**
- * Register tools
- */
-server.setRequestHandler('tools/list', async () => {
-  return { tools };
-});
-
-server.setRequestHandler('tools/call', async (request) => {
-  const { name, arguments: args } = request as { name: string; arguments: Record<string, unknown> };
-
-  try {
-    // Ensure database is initialized
-    await initializeDb();
-
-    if (!handlers) {
-      throw new Error('Handlers not initialized');
-    }
-
-    let result: unknown;
-
-    switch (name) {
-      case 'query':
-        result = await handlers.handleQuery(args);
-        break;
-
-      case 'execute-statement':
-        result = await handlers.handleExecute(args);
-        break;
-
-      case 'get-metadata':
-        result = await handlers.handleMetadata(args);
-        break;
-
-      case 'execute-procedure':
-        result = await handlers.handleExecuteProcedure(args);
-        break;
-
-      case 'get-status':
-        result = await handlers.handleGetStatus();
-        break;
-
-      default:
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Unknown tool: ${name}`,
-            },
-          ],
-          isError: true,
-        };
-    }
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(result, null, 2),
-        },
-      ],
-    };
-  } catch (error) {
-    logger.error('Tool execution failed', error);
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        },
-      ],
-      isError: true,
-    };
-  }
-});
-
-/**
  * Handle graceful shutdown
  */
 async function shutdown(): Promise<void> {
@@ -228,7 +145,95 @@ async function main(): Promise<void> {
     // Initialize database connection
     await initializeDb();
 
-    // Start the server with stdio transport
+    // Create server
+    const server = new Server(
+      {
+        name: config.serverName,
+        version: '1.0.0',
+      },
+      {
+        tools: {},
+      }
+    );
+
+    /**
+     * Register tools list handler
+     */
+    server.setRequestHandler('tools/list', async () => {
+      return { tools };
+    });
+
+    /**
+     * Register tools call handler
+     */
+    server.setRequestHandler('tools/call', async (request: any) => {
+      const { name, arguments: args } = request;
+
+      try {
+        await initializeDb();
+
+        if (!handlers) {
+          throw new Error('Handlers not initialized');
+        }
+
+        let result: unknown;
+
+        switch (name) {
+          case 'query':
+            result = await handlers.handleQuery(args);
+            break;
+
+          case 'execute-statement':
+            result = await handlers.handleExecute(args);
+            break;
+
+          case 'get-metadata':
+            result = await handlers.handleMetadata(args);
+            break;
+
+          case 'execute-procedure':
+            result = await handlers.handleExecuteProcedure(args);
+            break;
+
+          case 'get-status':
+            result = await handlers.handleGetStatus();
+            break;
+
+          default:
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `Unknown tool: ${name}`,
+                },
+              ],
+              isError: true,
+            };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        logger.error('Tool execution failed', error);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    });
+
+    // Connect and start server
     const transport = new StdioServerTransport();
     await server.connect(transport);
 
@@ -244,4 +249,4 @@ main().catch((error) => {
   process.exit(1);
 });
 
-export { server, ToolHandlers, SqlServerConnectionManager };
+export { ToolHandlers, SqlServerConnectionManager };
