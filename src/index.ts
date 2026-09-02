@@ -2,12 +2,11 @@
 
 /**
  * MCP Server for Microsoft SQL Server
- * Main entry point
+ * Main entry point - Using modern MCP SDK approach
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolRequest, ListToolsRequest } from '@modelcontextprotocol/sdk/types.js';
 import { loadConfig } from './config/index.js';
 import SimpleLogger from './logger/index.js';
 import SqlServerConnectionManager from './db/connection.js';
@@ -35,12 +34,12 @@ async function initializeDb(): Promise<void> {
 /**
  * Define MCP tools
  */
-const tools: Tool[] = [
+const tools = [
   {
     name: 'query',
     description: 'Execute a SELECT query and retrieve results',
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         query: {
           type: 'string',
@@ -54,7 +53,7 @@ const tools: Tool[] = [
     name: 'execute-statement',
     description: 'Execute INSERT, UPDATE, DELETE, or DDL statements',
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         statement: {
           type: 'string',
@@ -72,7 +71,7 @@ const tools: Tool[] = [
     name: 'get-metadata',
     description: 'Retrieve database metadata (databases, tables, columns, or procedures)',
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         type: {
           type: 'string',
@@ -91,7 +90,7 @@ const tools: Tool[] = [
     name: 'execute-procedure',
     description: 'Execute a stored procedure with optional input/output parameters',
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         name: {
           type: 'string',
@@ -110,11 +109,87 @@ const tools: Tool[] = [
     name: 'get-status',
     description: 'Get current connection status and pool information',
     inputSchema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {},
     },
   },
 ];
+
+/**
+ * Handle list tools request
+ */
+async function handleListTools(request: ListToolsRequest): Promise<{ tools: typeof tools }> {
+  return { tools };
+}
+
+/**
+ * Handle call tool request
+ */
+async function handleCallTool(request: CallToolRequest): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { name, arguments: args } = request;
+
+  try {
+    // Ensure database is initialized
+    await initializeDb();
+
+    if (!handlers) {
+      throw new Error('Handlers not initialized');
+    }
+
+    let result: unknown;
+
+    switch (name) {
+      case 'query':
+        result = await handlers.handleQuery(args as Record<string, unknown>);
+        break;
+
+      case 'execute-statement':
+        result = await handlers.handleExecute(args as Record<string, unknown>);
+        break;
+
+      case 'get-metadata':
+        result = await handlers.handleMetadata(args as Record<string, unknown>);
+        break;
+
+      case 'execute-procedure':
+        result = await handlers.handleExecuteProcedure(args as Record<string, unknown>);
+        break;
+
+      case 'get-status':
+        result = await handlers.handleGetStatus();
+        break;
+
+      default:
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Unknown tool: ${name}`,
+            },
+          ],
+        };
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
+  } catch (error) {
+    logger.error('Tool execution failed', error);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
+      ],
+    };
+  }
+}
 
 /**
  * Handle graceful shutdown
@@ -145,97 +220,13 @@ async function main(): Promise<void> {
     // Initialize database connection
     await initializeDb();
 
-    // Create server
-    const server = new Server(
-      {
-        name: config.serverName,
-        version: '1.0.0',
-      },
-      {
-        tools: {},
-      }
-    );
-
-    /**
-     * Register tools list handler
-     */
-    server.setRequestHandler('tools/list', async () => {
-      return { tools };
+    // Create and connect transport
+    const transport = new StdioServerTransport({
+      handleListTools,
+      handleCallTool,
     });
 
-    /**
-     * Register tools call handler
-     */
-    server.setRequestHandler('tools/call', async (request: any) => {
-      const { name, arguments: args } = request;
-
-      try {
-        await initializeDb();
-
-        if (!handlers) {
-          throw new Error('Handlers not initialized');
-        }
-
-        let result: unknown;
-
-        switch (name) {
-          case 'query':
-            result = await handlers.handleQuery(args);
-            break;
-
-          case 'execute-statement':
-            result = await handlers.handleExecute(args);
-            break;
-
-          case 'get-metadata':
-            result = await handlers.handleMetadata(args);
-            break;
-
-          case 'execute-procedure':
-            result = await handlers.handleExecuteProcedure(args);
-            break;
-
-          case 'get-status':
-            result = await handlers.handleGetStatus();
-            break;
-
-          default:
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `Unknown tool: ${name}`,
-                },
-              ],
-              isError: true,
-            };
-        }
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        logger.error('Tool execution failed', error);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    });
-
-    // Connect and start server
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
+    await transport.start();
 
     logger.info('MCP server started successfully');
   } catch (error) {
