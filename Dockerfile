@@ -26,12 +26,17 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY package.json ./
 
-# Add environment setup
-COPY .env.example .env
+# Set default environment variables (akan di-override oleh Dokploy/Docker)
+ENV SQLSERVER_SERVER=localhost
+ENV SQLSERVER_PORT=1433
+ENV SQLSERVER_DATABASE=master
+ENV SQLSERVER_USERNAME=sa
+ENV SQLSERVER_PASSWORD=
+ENV LOG_LEVEL=info
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD bun dist/index.js || exit 1
+  CMD node dist/index.js --version 2>/dev/null || exit 1
 
-# Run the server
+# Run the server with node (bukan bun)
 CMD ["node", "dist/index.js"]
