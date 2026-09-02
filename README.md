@@ -108,6 +108,8 @@ bun run dev
 
 ## Usage
 
+*For detailed instructions on connecting this server to AI tools like Claude Desktop, Antigravity IDE, and Cursor, see our [AI Client Integration Guide](docs/CLIENT_INTEGRATION.md).*
+
 The MCP server provides the following tools:
 
 ### 1. Query Tool
@@ -261,6 +263,40 @@ The connection manager implements:
 - **Keep-Alive**: Continuous connection monitoring
 
 ### Security Considerations
+
+> [!CAUTION]
+> **AI Database Access Risk**
+> Granting an AI access to your database is highly sensitive. Even though this MCP server supports `INSERT`, `UPDATE`, and `DELETE` commands, it is **STRONGLY RECOMMENDED** to connect using a **Read-Only** database user. 
+> 
+> AI assistants can sometimes hallucinate or misinterpret requests, which could lead to accidental destructive commands (e.g., dropping tables, deleting or modifying critical data). Using a read-only account provides a fail-safe layer against accidental data loss.
+
+#### Creating a Read-Only User (T-SQL)
+
+Run the following T-SQL script in your SQL Server to create a dedicated read-only user for this MCP server:
+
+```sql
+-- 1. Switch to your target database
+USE [YourDatabaseName];
+GO
+
+-- 2. Create a login (Server level)
+CREATE LOGIN [mcp_readonly_user] WITH PASSWORD = 'YourStrongPassword123!';
+GO
+
+-- 3. Create a user for the login (Database level)
+CREATE USER [mcp_readonly_user] FOR LOGIN [mcp_readonly_user];
+GO
+
+-- 4. Grant read-only permissions (db_datareader)
+ALTER ROLE [db_datareader] ADD MEMBER [mcp_readonly_user];
+GO
+
+-- 5. (Optional) Grant view definition if the AI needs to inspect schemas/tables structure
+GRANT VIEW DEFINITION TO [mcp_readonly_user];
+GO
+```
+
+#### Best Practices
 
 1. **Environment Variables**: Never commit `.env` file with real credentials
 2. **Parameter Binding**: Always use parameterized queries to prevent SQL injection
