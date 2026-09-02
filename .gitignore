@@ -11,3 +11,4 @@ coverage/
 *.tsbuildinfo
 build/
 *.mcpb
+.superpowers/
