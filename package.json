@@ -19,7 +19,7 @@
     "model-context-protocol",
     "database"
   ],
-  "author": "Your Name",
+  "author": "Eko Eryanto",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.1",

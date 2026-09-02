@@ -121,7 +121,7 @@ const tools = [
 /**
  * Handle list tools request
  */
-async function handleListTools(request: any): Promise<{ tools: typeof tools }> {
+async function handleListTools(_request: any): Promise<{ tools: typeof tools }> {
   return { tools };
 }
 
@@ -368,7 +368,7 @@ async function main(): Promise<void> {
                 }
               }
 
-              const result = await db.query(data.query, data.parameters || []);
+              const result = await db.query(data.query);
               res.writeHead(200);
               res.end(JSON.stringify({ success: true, data: result }));
             } catch (err: any) {

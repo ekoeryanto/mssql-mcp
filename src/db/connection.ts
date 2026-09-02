@@ -56,8 +56,6 @@ export class SqlServerConnectionManager {
         options: {
           encrypt: this.config.encrypt,
           trustServerCertificate: this.config.trustServerCertificate,
-          enableKeepAlive: true,
-          keepAliveInitialDelayMs: 0,
         },
         pool: {
           min: this.config.connectionPoolMin || 2,
@@ -164,16 +162,16 @@ export class SqlServerConnectionManager {
       if (params) {
         for (const [key, { value, output }] of Object.entries(params)) {
           if (output) {
-            request.output(key, value);
+            request.output(key, value as any);
           } else {
-            request.input(key, value);
+            request.input(key, value as any);
           }
         }
       }
 
       const result = await request.execute(procedureName);
       this.logger.debug('Stored procedure executed successfully', { rowsAffected: result.rowsAffected });
-      return result;
+      return result as any;
     } catch (error) {
       this.logger.error('Stored procedure execution failed', error);
       throw error;

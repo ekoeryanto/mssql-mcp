@@ -186,7 +186,7 @@ export class ToolHandlers {
 
       return {
         success: true,
-        rowsAffected: result.rowsAffected,
+        rowsAffected: result.rowsAffected?.[0] || 0,
         outputValues: result.output,
         data: result.recordset || undefined,
       };
