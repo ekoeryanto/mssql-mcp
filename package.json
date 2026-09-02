@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && bun build src/index.ts --target=node --outfile=dist/bundle.js",
     "start": "node dist/index.js",
     "test": "echo \"Test suite coming soon\"",
     "lint": "eslint src --ext .ts",
