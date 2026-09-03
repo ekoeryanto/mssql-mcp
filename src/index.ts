@@ -10,6 +10,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import AjvModule, { type ErrorObject } from 'ajv';
 import * as http from 'node:http';
 import { loadConfig } from './config/index.js';
 import SimpleLogger from './logger/index.js';
@@ -172,6 +173,29 @@ const staticToolDefs: McpToolDef[] = [
 
 const STATIC_TOOL_NAMES = new Set(staticToolDefs.map((t) => t.name));
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const Ajv = (AjvModule as any).default || AjvModule;
+const ajv = new Ajv({ allErrors: true, strict: false });
+
+// Static tool schemas are fixed at build time (unlike tb_mcp_skills rows),
+// so compiling them eagerly here can't throw at request time the way
+// dynamic-skill schemas can.
+const staticToolValidators = new Map(staticToolDefs.map((t) => [t.name, ajv.compile(t.inputSchema)]));
+
+function validateStaticArgs(name: string, args: unknown): { ok: true } | { ok: false; error: string } {
+  const validate = staticToolValidators.get(name);
+  if (!validate) {
+    return { ok: true };
+  }
+  if (validate(args ?? {})) {
+    return { ok: true };
+  }
+  const message = (validate.errors ?? [])
+    .map((e: ErrorObject) => `${e.instancePath || '(root)'} ${e.message ?? 'is invalid'}`)
+    .join('; ');
+  return { ok: false, error: message };
+}
+
 /**
  * Create an MCP server instance wired up to the static SQL tools and the
  * dynamic tb_mcp_skills-backed tools.
@@ -187,6 +211,13 @@ function createMcpServer(): Server {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+
+    if (STATIC_TOOL_NAMES.has(name)) {
+      const validation = validateStaticArgs(name, args);
+      if (!validation.ok) {
+        return { content: [{ type: 'text', text: `Error: Invalid arguments: ${validation.error}` }], isError: true };
+      }
+    }
 
     switch (name) {
       case 'query':

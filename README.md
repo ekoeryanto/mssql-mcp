@@ -233,10 +233,40 @@ Check server connection status:
 }
 ```
 
+### 6. Save Skill Tool
+
+Define a new reusable SQL "skill" that becomes callable as its own tool. Explore the
+schema with `get-metadata` first, then describe the SQL and its input schema:
+
+```json
+{
+  "name": "save-skill",
+  "arguments": {
+    "tool_name": "cek-tagihan",
+    "description": "Cek status tagihan pelanggan berdasarkan nomor pelanggan",
+    "keywords": "tagihan, billing, invoice",
+    "generated_prompt": "{\"type\":\"object\",\"properties\":{\"nomor\":{\"type\":\"string\",\"description\":\"Nomor pelanggan\"}},\"required\":[\"nomor\"]}",
+    "generated_sql": "SELECT * FROM tb_tagihan WHERE nomor = @nomor"
+  }
+}
+```
+
+See [docs/DYNAMIC_SKILLS.md](docs/DYNAMIC_SKILLS.md) for the full walkthrough,
+including how skills can also be inserted directly into `tb_mcp_skills` by hand.
+
 ### Dynamic Skills
 
-Beyond these 5 tools, additional tools can be defined at runtime in a
-`tb_mcp_skills` database table — see [docs/DYNAMIC_SKILLS.md](docs/DYNAMIC_SKILLS.md).
+Beyond these 6 built-in tools, additional tools can be defined at runtime in a
+`tb_mcp_skills` database table — either via `save-skill` above, or by inserting
+directly into the table. See [docs/DYNAMIC_SKILLS.md](docs/DYNAMIC_SKILLS.md).
+
+> [!IMPORTANT]
+> `generated_sql` runs as trusted, already-reviewed SQL — it is **not** gated by
+> `SQLSERVER_ALLOW_MUTATIONS`. Only the tool *arguments* a caller supplies are
+> untrusted, and those are always bound as SQL parameters. This means anyone who
+> can call `save-skill` can define and immediately run a skill that mutates data
+> even when `SQLSERVER_ALLOW_MUTATIONS=false`. Restrict access to `save-skill`
+> (and to `tb_mcp_skills` itself) accordingly.
 
 ## Architecture
 

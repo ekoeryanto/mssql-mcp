@@ -122,10 +122,7 @@ export interface SaveSkillInput {
   generated_sql: string;
 }
 
-export interface SkillSqlValidationResult {
-  valid: boolean;
-  error?: string;
-}
+export type SkillSqlValidationResult = { valid: true } | { valid: false; error: string };
 
 export interface SkillsStore {
   listSkills(): Promise<SkillRow[]>;

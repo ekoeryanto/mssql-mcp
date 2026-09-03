@@ -1,6 +1,6 @@
 # Dynamic Skills
 
-Beyond the 5 built-in SQL tools, this server can expose additional tools
+Beyond the 6 built-in SQL tools, this server can expose additional tools
 defined entirely in a database table, `tb_mcp_skills` — no restart needed
 to add or change one. See the design rationale in
 `docs/superpowers/specs/2026-09-02-dynamic-skills-design.md`.
@@ -66,6 +66,19 @@ bound as a SQL parameter and returns the matching rows as JSON text.
   who has never seen the skill before.
 - Skill SQL is trusted content — `SQLSERVER_ALLOW_MUTATIONS` does not gate
   it. Only the tool's *arguments* are untrusted, and they're always bound
-  as SQL parameters, never string-interpolated.
+  as SQL parameters, never string-interpolated. The real trust boundary is
+  "who can write to `tb_mcp_skills`" — that includes anyone who can call
+  `save-skill`, not just people with direct DB access. On a server running
+  with the default `SQLSERVER_ALLOW_MUTATIONS=false` (read-only `query`/
+  `execute-statement`/`execute-procedure`), a client that can reach
+  `save-skill` can still define and immediately call a skill whose
+  `generated_sql` mutates data — that gate simply doesn't apply here.
+  Restrict who/what can call `save-skill` (and who has write access to
+  `tb_mcp_skills`) the same way you would restrict mutation access itself.
+- `save-skill`'s dry-run validation runs the candidate SQL inside a
+  transaction that's always rolled back, but rollback only undoes
+  transactional side effects — it does not reclaim consumed IDENTITY
+  values or undo non-transactional operations (e.g. `xp_cmdshell`). Treat
+  the dry-run as "does this SQL run," not as a sandbox.
 - Deactivating a skill (`UPDATE tb_mcp_skills SET is_active = 0 WHERE
   tool_name = ...`) is manual DB administration — there's no tool for it.
