@@ -233,6 +233,11 @@ Check server connection status:
 }
 ```
 
+### Dynamic Skills
+
+Beyond these 5 tools, additional tools can be defined at runtime in a
+`tb_mcp_skills` database table — see [docs/DYNAMIC_SKILLS.md](docs/DYNAMIC_SKILLS.md).
+
 ## Architecture
 
 ### Project Structure

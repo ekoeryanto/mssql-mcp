@@ -426,7 +426,7 @@ async function main(): Promise<void> {
     }
 
     // Note: the database connection is established lazily on first tool call
-    // (see getHandlers), not here. Connecting eagerly would block the MCP
+    // (see getStore), not here. Connecting eagerly would block the MCP
     // handshake and make `claude mcp add` report a failed connection whenever
     // SQL Server isn't reachable yet at startup.
 
