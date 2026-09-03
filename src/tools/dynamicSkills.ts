@@ -37,7 +37,16 @@ function compileSkillSchema(
   schema: JsonSchemaObject,
 ): { ok: true; validate: ValidateFunction } | { ok: false; error: string } {
   try {
-    return { ok: true, validate: ajv.compile(schema) };
+    const validate = ajv.compile(schema);
+    // A `$async: true` schema makes ajv return a Promise from validate(),
+    // which is always truthy — `if (!validate(args))` below would never
+    // fire, silently skipping validation and leaving an unhandled
+    // rejection on a failed check. Dynamic skill schemas have no reason
+    // to be async, so reject them at compile time instead.
+    if (validate.$async) {
+      return { ok: false, error: 'schema must not be async ($async: true is not supported)' };
+    }
+    return { ok: true, validate };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }

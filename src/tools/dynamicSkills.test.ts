@@ -59,6 +59,18 @@ describe('toMcpTool', () => {
     expect(result.ok).toBe(false);
   });
 
+  test('flags a row whose generated_prompt uses $async', () => {
+    const row: SkillRow = {
+      tool_name: 'broken',
+      description: 'x',
+      keywords: null,
+      generated_prompt:
+        '{"$async":true,"type":"object","properties":{"x":{"type":"string","description":"d"}},"required":["x"]}',
+    };
+    const result = toMcpTool(row);
+    expect(result.ok).toBe(false);
+  });
+
   test('flags a row whose generated_prompt is valid JSON but not a valid JSON Schema', () => {
     const row: SkillRow = {
       tool_name: 'broken',
