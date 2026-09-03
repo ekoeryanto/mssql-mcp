@@ -10,6 +10,12 @@ to add or change one. See the design rationale in
 Run `scripts/sql/create-tb-mcp-skills.sql` once against your target
 database.
 
+The feature is on by default. Set `SKILLS_ENABLED=false` to turn it off
+entirely — `save-skill` disappears from `tools/list`, no `tb_mcp_skills`
+lookups happen on `tools/list`, and calling any non-static tool name
+returns `isError:true` ("dynamic skills are disabled") instead of running
+it. The 6 static SQL tools are unaffected either way.
+
 By default the server looks for a table named `tb_mcp_skills` in the
 connected database. To use a different name — or a schema/database-qualified
 one — set `SKILLS_TABLE` in your environment, e.g.:

@@ -146,30 +146,40 @@ const staticToolDefs: McpToolDef[] = [
     description: 'Get current connection status and pool information',
     inputSchema: { type: 'object', properties: {} },
   },
-  {
-    name: 'save-skill',
-    description:
-      'Create or update a reusable SQL "skill" exposed as a new tool. Explore the schema with get-metadata first, then define the SQL and its input schema here.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        tool_name: { type: 'string', description: 'Unique snake/kebab-case tool identifier' },
-        description: { type: 'string', description: 'What this skill does, shown when browsing tools/list' },
-        keywords: { type: 'string', description: 'Comma-separated keywords to help discovery' },
-        generated_prompt: {
-          type: 'string',
-          description:
-            'JSON Schema (as a string) describing this tool\'s input arguments. Every property MUST have its own non-empty "description" — this is what a future AI session reads to know what value to supply, so write it as if explaining the parameter to someone who has never seen this skill before.',
-        },
-        generated_sql: {
-          type: 'string',
-          description: "Parameterized SQL using @paramName placeholders matching generated_prompt's properties",
-        },
-      },
-      required: ['tool_name', 'description', 'generated_prompt', 'generated_sql'],
-    },
-  },
 ];
+
+const saveSkillToolDef: McpToolDef = {
+  name: 'save-skill',
+  description:
+    'Create or update a reusable SQL "skill" exposed as a new tool. Explore the schema with get-metadata first, then define the SQL and its input schema here.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      tool_name: { type: 'string', description: 'Unique snake/kebab-case tool identifier' },
+      description: { type: 'string', description: 'What this skill does, shown when browsing tools/list' },
+      keywords: { type: 'string', description: 'Comma-separated keywords to help discovery' },
+      generated_prompt: {
+        type: 'string',
+        description:
+          'JSON Schema (as a string) describing this tool\'s input arguments. Every property MUST have its own non-empty "description" — this is what a future AI session reads to know what value to supply, so write it as if explaining the parameter to someone who has never seen this skill before.',
+      },
+      generated_sql: {
+        type: 'string',
+        description: "Parameterized SQL using @paramName placeholders matching generated_prompt's properties",
+      },
+    },
+    required: ['tool_name', 'description', 'generated_prompt', 'generated_sql'],
+  },
+};
+
+// SKILLS_ENABLED=false turns off the whole dynamic-skills feature: no
+// save-skill tool, no tb_mcp_skills lookups on tools/list, and any call to
+// a dynamic tool name is rejected. Static SQL tools are unaffected either way.
+const dynamicSkillsEnabled = config.skillsEnabled;
+
+if (dynamicSkillsEnabled) {
+  staticToolDefs.push(saveSkillToolDef);
+}
 
 const STATIC_TOOL_NAMES = new Set(staticToolDefs.map((t) => t.name));
 
@@ -204,6 +214,9 @@ function createMcpServer(): Server {
   const server = new Server({ name: SERVER_NAME, version: SERVER_VERSION }, { capabilities: { tools: {} } });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
+    if (!dynamicSkillsEnabled) {
+      return { tools: staticToolDefs };
+    }
     const store = await getStoreOrNull();
     const dynamicTools = store ? await loadDynamicTools(store, logger, STATIC_TOOL_NAMES) : [];
     return { tools: [...staticToolDefs, ...dynamicTools] };
@@ -237,6 +250,12 @@ function createMcpServer(): Server {
       case 'get-status':
         return runTool((h) => h.handleGetStatus());
       default: {
+        if (!dynamicSkillsEnabled) {
+          return {
+            content: [{ type: 'text', text: `Error: Tool not found: ${name} (dynamic skills are disabled)` }],
+            isError: true,
+          };
+        }
         const store = await getStoreOrNull();
         if (!store) {
           return {

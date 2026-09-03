@@ -93,7 +93,8 @@ SQLSERVER_PASSWORD=YourStrong@Password
 SQLSERVER_ENCRYPT=false
 SQLSERVER_TRUST_SERVER_CERTIFICATE=true
 
-# Dynamic Skills table (optional, defaults to tb_mcp_skills — see docs/DYNAMIC_SKILLS.md)
+# Dynamic Skills feature (optional — see docs/DYNAMIC_SKILLS.md)
+# SKILLS_ENABLED=true
 # SKILLS_TABLE=tb_mcp_skills
 
 # Connection Pool
