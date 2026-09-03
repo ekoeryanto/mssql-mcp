@@ -11,6 +11,8 @@ import type {
   SkillDefinition,
   SaveSkillInput,
   SkillSqlValidationResult,
+  KnowledgeRow,
+  SaveKnowledgeInput,
 } from '../types/index.js';
 
 /**
@@ -36,6 +38,7 @@ export class SqlServerConnectionManager {
   private readonly config: SqlServerConfig;
   private readonly logger: Logger;
   private readonly skillsTable: string;
+  private readonly knowledgeTable: string;
   private isConnecting = false;
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
@@ -48,6 +51,7 @@ export class SqlServerConnectionManager {
     // can't be bound as a query parameter the way values can, so it must
     // be checked before ever being spliced into SQL text.
     this.skillsTable = quoteIdentifierPath(config.skillsTable);
+    this.knowledgeTable = quoteIdentifierPath(config.knowledgeTable);
   }
 
   /**
@@ -426,6 +430,51 @@ export class SqlServerConnectionManager {
       ELSE
         INSERT INTO ${this.skillsTable} (tool_name, description, keywords, generated_prompt, generated_sql, is_active)
         VALUES (@toolName, @description, @keywords, @generatedPrompt, @generatedSql, 1);
+    `);
+  }
+
+  /**
+   * Search tb_mcp_knowledge by a free-text substring match across
+   * title/content/keywords, or list the most recently updated entries when
+   * query is omitted. limit is bound as a parameter (TOP (@limit) is valid
+   * T-SQL); the caller (searchKnowledgeTool) has already clamped it.
+   */
+  async searchKnowledge(query: string | undefined, limit: number): Promise<KnowledgeRow[]> {
+    await this.ensureConnected();
+    const request = this.pool!.request();
+    request.input('limit', sql.Int, limit);
+    if (query) {
+      request.input('pattern', sql.NVarChar, `%${query}%`);
+    }
+    const whereClause = query ? 'WHERE title LIKE @pattern OR content LIKE @pattern OR keywords LIKE @pattern' : '';
+    const result = await request.query(`
+      SELECT TOP (@limit) title, content, keywords, updated_at
+      FROM ${this.knowledgeTable}
+      ${whereClause}
+      ORDER BY updated_at DESC
+    `);
+    return result.recordset as KnowledgeRow[];
+  }
+
+  /**
+   * Insert or update a knowledge entry by title.
+   */
+  async saveKnowledge(entry: SaveKnowledgeInput): Promise<void> {
+    await this.ensureConnected();
+    const request = this.pool!.request();
+    request.input('title', sql.NVarChar, entry.title);
+    request.input('content', sql.NVarChar(sql.MAX), entry.content);
+    request.input('keywords', sql.NVarChar, entry.keywords ?? null);
+    await request.query(`
+      IF EXISTS (SELECT 1 FROM ${this.knowledgeTable} WHERE title = @title)
+        UPDATE ${this.knowledgeTable}
+        SET content = @content,
+            keywords = @keywords,
+            updated_at = SYSUTCDATETIME()
+        WHERE title = @title
+      ELSE
+        INSERT INTO ${this.knowledgeTable} (title, content, keywords)
+        VALUES (@title, @content, @keywords);
     `);
   }
 }
