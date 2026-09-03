@@ -58,6 +58,17 @@ describe('toMcpTool', () => {
     const result = toMcpTool(row);
     expect(result.ok).toBe(false);
   });
+
+  test('flags a row whose generated_prompt is valid JSON but not a valid JSON Schema', () => {
+    const row: SkillRow = {
+      tool_name: 'broken',
+      description: 'x',
+      keywords: null,
+      generated_prompt: '{"type":"object","properties":{"x":{"type":"strng","description":"d"}}}',
+    };
+    const result = toMcpTool(row);
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe('loadDynamicTools', () => {
@@ -143,6 +154,16 @@ describe('callDynamicSkill', () => {
     });
   });
 
+  test('returns isError instead of throwing when generated_prompt is valid JSON but not a valid JSON Schema', async () => {
+    const definition: SkillDefinition = {
+      generated_prompt: '{"type":"object","properties":{},"required":"nomor"}',
+      generated_sql: 'SELECT 1',
+    };
+    const store = makeStore({ getSkillDefinition: async () => definition });
+    const result = await callDynamicSkill(store, makeLogger(), 'broken-skill', {});
+    expect(result.isError).toBe(true);
+  });
+
   test('returns an error when execution throws', async () => {
     const definition: SkillDefinition = {
       generated_prompt: '{"type":"object","properties":{}}',
@@ -192,6 +213,22 @@ describe('saveSkill', () => {
     };
     const result = await saveSkill(store, makeLogger(), new Set(), input);
     expect(result.isError).toBe(true);
+  });
+
+  test('rejects generated_prompt that is valid JSON but not a valid JSON Schema, without writing to the store', async () => {
+    let upserted = false;
+    const store = makeStore({
+      upsertSkill: async () => {
+        upserted = true;
+      },
+    });
+    const input: SaveSkillInput = {
+      ...validInput,
+      generated_prompt: '{"type":"object","properties":{"x":{"type":"strng","description":"d"}}}',
+    };
+    const result = await saveSkill(store, makeLogger(), new Set(), input);
+    expect(result.isError).toBe(true);
+    expect(upserted).toBe(false);
   });
 
   test('rejects when validateSkillSql reports invalid', async () => {

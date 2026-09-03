@@ -5,10 +5,20 @@
  */
 
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import AjvModule from 'ajv';
+import AjvModule, { type ErrorObject, type ValidateFunction } from 'ajv';
 import { buildDummyArgs, parseSkillPrompt, validatePromptDescriptions } from './skillSchema.js';
-import type { Logger, McpToolDef, SaveSkillInput, SkillRow, SkillsStore } from '../types/index.js';
+import type {
+  JsonSchemaObject,
+  Logger,
+  McpToolDef,
+  SaveSkillInput,
+  SkillRow,
+  SkillsStore,
+} from '../types/index.js';
 
+// ajv v8 ships as CJS; under nodenext/esModuleInterop the default export
+// sometimes lands on `.default` and sometimes on the module itself depending
+// on the consumer's module resolution, so both are checked here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Ajv = (AjvModule as any).default || AjvModule;
 const ajv = new Ajv({ allErrors: true, strict: false });
@@ -17,10 +27,30 @@ function errorResult(message: string): CallToolResult {
   return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
 }
 
+/**
+ * ajv.compile() throws (rather than returning a failure value) when given
+ * JSON that parses fine but isn't a valid JSON Schema (bad `type` enum,
+ * `required` as a non-array, an unresolvable `$ref`, etc). Every caller here
+ * needs that to be a normal failure result, not an uncaught exception.
+ */
+function compileSkillSchema(
+  schema: JsonSchemaObject,
+): { ok: true; validate: ValidateFunction } | { ok: false; error: string } {
+  try {
+    return { ok: true, validate: ajv.compile(schema) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
 export function toMcpTool(row: SkillRow): { ok: true; tool: McpToolDef } | { ok: false; error: string } {
   const parsed = parseSkillPrompt(row.generated_prompt);
   if (!parsed.ok) {
     return { ok: false, error: parsed.error };
+  }
+  const compiled = compileSkillSchema(parsed.schema);
+  if (!compiled.ok) {
+    return { ok: false, error: `generated_prompt is not a valid JSON Schema: ${compiled.error}` };
   }
   const description = row.keywords ? `${row.description} (Keywords: ${row.keywords})` : row.description;
   return { ok: true, tool: { name: row.tool_name, description, inputSchema: parsed.schema } };
@@ -73,10 +103,15 @@ export async function callDynamicSkill(
     return errorResult(`Skill "${toolName}" is misconfigured: ${parsed.error}`);
   }
 
-  const validate = ajv.compile(parsed.schema);
+  const compiled = compileSkillSchema(parsed.schema);
+  if (!compiled.ok) {
+    logger.error(`Skill "${toolName}" has an invalid generated_prompt JSON Schema`, compiled.error);
+    return errorResult(`Skill "${toolName}" is misconfigured: schema is invalid: ${compiled.error}`);
+  }
+  const validate = compiled.validate;
   if (!validate(args)) {
     const messages = (validate.errors ?? [])
-      .map((e: typeof validate.errors[number]) => `${e.instancePath || '(root)'} ${e.message ?? 'is invalid'}`)
+      .map((e: ErrorObject) => `${e.instancePath || '(root)'} ${e.message ?? 'is invalid'}`)
       .join('; ');
     return errorResult(`Invalid arguments: ${messages}`);
   }
@@ -108,6 +143,11 @@ export async function saveSkill(
   const descriptionCheck = validatePromptDescriptions(parsed.schema);
   if (!descriptionCheck.ok) {
     return errorResult(`Property "${descriptionCheck.property}" in generated_prompt is missing a "description"`);
+  }
+
+  const compiled = compileSkillSchema(parsed.schema);
+  if (!compiled.ok) {
+    return errorResult(`generated_prompt is not a valid JSON Schema: ${compiled.error}`);
   }
 
   const dummyArgs = buildDummyArgs(parsed.schema);
