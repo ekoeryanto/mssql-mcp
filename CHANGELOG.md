@@ -1,5 +1,32 @@
 # Changelog
 
+# [1.3.0](https://github.com/ekoeryanto/mssql-mcp/compare/1.2.0...1.3.0) (2026-09-03)
+
+### Bug Fixes
+
+* bypass authentication for /message endpoint and log 404 errors with resolved pathnames ([ed9286f](https://github.com/ekoeryanto/mssql-mcp/commit/ed9286f875c5a85b755aefa2c0373db4d7e2da30))
+* catch ajv.compile() throw on invalid JSON Schema in dynamic skills ([78f1385](https://github.com/ekoeryanto/mssql-mcp/commit/78f13859ceb67fce667ba0234bed4dff18cf4adb))
+* CORS, URL routing, and relative message path ([4588f03](https://github.com/ekoeryanto/mssql-mcp/commit/4588f03cff1487d82af007ec53716a6837a11285))
+* lazy DB connection, add Streamable HTTP transport, modernize server ([8deed5f](https://github.com/ekoeryanto/mssql-mcp/commit/8deed5ff54b7abfcc3e8a0c423d207f752f1b936))
+* reject $async JSON Schemas in dynamic skills ([2ad7f4d](https://github.com/ekoeryanto/mssql-mcp/commit/2ad7f4d680bd7eff24a3d235de50213a7b149fa6))
+* resolve race condition by storing SSEServerTransport session before connecting to prevent 404 errors ([9ee6241](https://github.com/ekoeryanto/mssql-mcp/commit/9ee62417bddd0dd8683ff50479fc2596318e8f25))
+* restore argument validation for static tools, tighten skill types/docs ([892f740](https://github.com/ekoeryanto/mssql-mcp/commit/892f740688682193045a3498fe22a23eca9438f0))
+* update 401 error response to return JSON instead of plain text ([67af8b9](https://github.com/ekoeryanto/mssql-mcp/commit/67af8b9bb1936319d390996395d4542514580061))
+
+### Features
+
+* add dynamic skill list/call/save orchestration ([fff4827](https://github.com/ekoeryanto/mssql-mcp/commit/fff4827990e2ed38c6893c8684bc0f26e6a3f20d))
+* add pure JSON Schema helpers for dynamic skills ([d2096f8](https://github.com/ekoeryanto/mssql-mcp/commit/d2096f83534474d1fd7c2faa737430bb9d015520))
+* add skill persistence methods to SqlServerConnectionManager ([6878fa4](https://github.com/ekoeryanto/mssql-mcp/commit/6878fa4e58b88da214f263ffda65d016fef37ad4))
+* add SKILLS_ENABLED to disable the dynamic skills feature entirely ([7902471](https://github.com/ekoeryanto/mssql-mcp/commit/7902471fd3a589f02e66b3a1b62c03e76375172b))
+* add tb_mcp_skills DDL script ([b5877c6](https://github.com/ekoeryanto/mssql-mcp/commit/b5877c68c0a6b34c55745a622df0f78069b4fd02))
+* add test server for SSE transport verification ([2320427](https://github.com/ekoeryanto/mssql-mcp/commit/2320427b9902c1c6cf2efebc9a10614f45398f95))
+* add types and ajv dependency for dynamic skills ([5e4924d](https://github.com/ekoeryanto/mssql-mcp/commit/5e4924d4381c2c7854f5b8f3c1e2ba21d850c260))
+* implement Bearer and Basic authentication middleware using optional MCP_SERVER_AUTH_TOKEN ([5975364](https://github.com/ekoeryanto/mssql-mcp/commit/5975364ef15a09615cdfd64357c8bd5bc23328c4))
+* make the dynamic skills table name configurable via SKILLS_TABLE ([756df8d](https://github.com/ekoeryanto/mssql-mcp/commit/756df8d76d4f4ac26dafae51deb9c89e65134fa6))
+* merge static and dynamic tools into low-level Server handlers ([7f4a126](https://github.com/ekoeryanto/mssql-mcp/commit/7f4a1266c26002ea997607db842792cf47633be8))
+* surface the get-metadata-then-save-skill workflow to AI clients ([bebebab](https://github.com/ekoeryanto/mssql-mcp/commit/bebebab44361e58a9806510dfd67dd1440d3a58c))
+
 # [1.2.0](https://github.com/ekoeryanto/mssql-mcp/compare/1.1.0...1.2.0) (2026-09-02)
 
 ### Features
