@@ -47,6 +47,7 @@ export function loadConfig(): {
   serverName: string;
   authToken?: string;
   skillsEnabled: boolean;
+  knowledgeEnabled: boolean;
 } {
   debugLog('Loading configuration...');
   debugLog(
@@ -66,6 +67,7 @@ export function loadConfig(): {
       trustServerCertificate: getEnvBoolean('SQLSERVER_TRUST_SERVER_CERTIFICATE', true),
       allowMutations: getEnvBoolean('SQLSERVER_ALLOW_MUTATIONS', false),
       skillsTable: getEnv('SKILLS_TABLE', 'tb_mcp_skills'),
+      knowledgeTable: getEnv('KNOWLEDGE_TABLE', 'tb_mcp_knowledge'),
       connectionPoolMin: getEnvNumber('SQLSERVER_CONNECTION_POOL_MIN', 2),
       connectionPoolMax: getEnvNumber('SQLSERVER_CONNECTION_POOL_MAX', 10),
       requestTimeout: getEnvNumber('SQLSERVER_REQUEST_TIMEOUT', 30000),
@@ -74,5 +76,6 @@ export function loadConfig(): {
     serverName: getEnv('MCP_SERVER_NAME', 'mssql-mcp'),
     authToken: process.env.MCP_SERVER_AUTH_TOKEN,
     skillsEnabled: getEnvBoolean('SKILLS_ENABLED', true),
+    knowledgeEnabled: getEnvBoolean('KNOWLEDGE_ENABLED', true),
   };
 }

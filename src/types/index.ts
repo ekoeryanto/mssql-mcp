@@ -12,6 +12,7 @@ export interface SqlServerConfig {
   trustServerCertificate: boolean;
   allowMutations: boolean;
   skillsTable: string;
+  knowledgeTable: string;
   connectionPoolMin?: number;
   connectionPoolMax?: number;
   requestTimeout?: number;
@@ -156,4 +157,22 @@ export interface McpToolDef {
   name: string;
   description: string;
   inputSchema: JsonSchemaObject;
+}
+
+export interface KnowledgeRow {
+  title: string;
+  content: string;
+  keywords: string | null;
+  updated_at: Date;
+}
+
+export interface SaveKnowledgeInput {
+  title: string;
+  content: string;
+  keywords?: string;
+}
+
+export interface KnowledgeStore {
+  searchKnowledge(query: string | undefined, limit: number): Promise<KnowledgeRow[]>;
+  saveKnowledge(entry: SaveKnowledgeInput): Promise<void>;
 }
