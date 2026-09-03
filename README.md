@@ -97,6 +97,10 @@ SQLSERVER_TRUST_SERVER_CERTIFICATE=true
 # SKILLS_ENABLED=true
 # SKILLS_TABLE=tb_mcp_skills
 
+# Knowledge Base feature (optional — see docs/KNOWLEDGE_BASE.md)
+# KNOWLEDGE_ENABLED=true
+# KNOWLEDGE_TABLE=tb_mcp_knowledge
+
 # Connection Pool
 SQLSERVER_CONNECTION_POOL_MIN=2
 SQLSERVER_CONNECTION_POOL_MAX=10
@@ -271,6 +275,13 @@ directly into the table. See [docs/DYNAMIC_SKILLS.md](docs/DYNAMIC_SKILLS.md).
 > can call `save-skill` can define and immediately run a skill that mutates data
 > even when `SQLSERVER_ALLOW_MUTATIONS=false`. Restrict access to `save-skill`
 > (and to `tb_mcp_skills` itself) accordingly.
+
+### Knowledge Base
+
+Beyond the SQL tools, this server can store and search free-form notes —
+table semantics, gotchas, SOP excerpts — via `search-knowledge` and
+`save-knowledge`, backed by a `tb_mcp_knowledge` database table — see
+[docs/KNOWLEDGE_BASE.md](docs/KNOWLEDGE_BASE.md).
 
 ## Architecture
 
