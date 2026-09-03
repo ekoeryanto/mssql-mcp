@@ -219,9 +219,10 @@ const saveKnowledgeToolDef: McpToolDef = {
     properties: {
       title: {
         type: 'string',
+        minLength: 1,
         description: 'Unique title identifying this entry. Saving with an existing title overwrites its content.',
       },
-      content: { type: 'string', description: 'The note/fact/doc excerpt itself.' },
+      content: { type: 'string', minLength: 1, description: 'The note/fact/doc excerpt itself.' },
       keywords: {
         type: 'string',
         description: 'Optional comma-separated keywords to help future searches find this entry.',
@@ -331,7 +332,10 @@ function createMcpServer(): Server {
         return runTool((h) => h.handleGetStatus());
       case 'search-knowledge': {
         if (!knowledgeEnabled) {
-          return { content: [{ type: 'text', text: 'Error: Tool not found: search-knowledge' }], isError: true };
+          return {
+            content: [{ type: 'text', text: 'Error: Tool not found: search-knowledge (knowledge base is disabled)' }],
+            isError: true,
+          };
         }
         const store = await getStoreOrNull();
         if (!store) {
@@ -341,7 +345,10 @@ function createMcpServer(): Server {
       }
       case 'save-knowledge': {
         if (!knowledgeEnabled) {
-          return { content: [{ type: 'text', text: 'Error: Tool not found: save-knowledge' }], isError: true };
+          return {
+            content: [{ type: 'text', text: 'Error: Tool not found: save-knowledge (knowledge base is disabled)' }],
+            isError: true,
+          };
         }
         const store = await getStoreOrNull();
         if (!store) {
