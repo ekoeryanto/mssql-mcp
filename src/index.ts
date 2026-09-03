@@ -77,6 +77,11 @@ async function runTool<T>(fn: (handlers: ToolHandlers) => Promise<T>): Promise<C
   }
 }
 
+// SKILLS_ENABLED=false turns off the whole dynamic-skills feature: no
+// save-skill tool, no tb_mcp_skills lookups on tools/list, and any call to
+// a dynamic tool name is rejected. Static SQL tools are unaffected either way.
+const dynamicSkillsEnabled = config.skillsEnabled;
+
 const staticToolDefs: McpToolDef[] = [
   {
     name: 'query',
@@ -109,7 +114,11 @@ const staticToolDefs: McpToolDef[] = [
   },
   {
     name: 'get-metadata',
-    description: 'Retrieve database metadata (databases, tables, columns, or procedures)',
+    description:
+      'Retrieve database metadata (databases, tables, columns, or procedures).' +
+      (dynamicSkillsEnabled
+        ? ' Use this to discover real table/column names before writing a skill with save-skill — never guess them.'
+        : ''),
     inputSchema: {
       type: 'object',
       properties: {
@@ -172,11 +181,6 @@ const saveSkillToolDef: McpToolDef = {
   },
 };
 
-// SKILLS_ENABLED=false turns off the whole dynamic-skills feature: no
-// save-skill tool, no tb_mcp_skills lookups on tools/list, and any call to
-// a dynamic tool name is rejected. Static SQL tools are unaffected either way.
-const dynamicSkillsEnabled = config.skillsEnabled;
-
 if (dynamicSkillsEnabled) {
   staticToolDefs.push(saveSkillToolDef);
 }
@@ -210,8 +214,21 @@ function validateStaticArgs(name: string, args: unknown): { ok: true } | { ok: f
  * Create an MCP server instance wired up to the static SQL tools and the
  * dynamic tb_mcp_skills-backed tools.
  */
+const SKILLS_WORKFLOW_INSTRUCTIONS = `
+To create a new reusable "skill" tool (e.g. "cek tagihan"), always follow this order:
+1. Call get-metadata (type: "tables", then type: "columns" with the real table name) to discover the actual table/column names. Never guess them.
+2. Compose generated_prompt (a JSON Schema string for the skill's input) and generated_sql (parameterized SQL using @paramName placeholders matching generated_prompt's properties) from what you found.
+3. Call save-skill with tool_name, description, keywords, generated_prompt, generated_sql. It validates everything (JSON shape, that every property has a description, and a transaction+rollback dry-run of the SQL) before the skill becomes callable.
+Do not call save-skill before get-metadata for a table you have not inspected in this session.`.trim();
+
 function createMcpServer(): Server {
-  const server = new Server({ name: SERVER_NAME, version: SERVER_VERSION }, { capabilities: { tools: {} } });
+  const server = new Server(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    {
+      capabilities: { tools: {} },
+      ...(dynamicSkillsEnabled ? { instructions: SKILLS_WORKFLOW_INSTRUCTIONS } : {}),
+    },
+  );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     if (!dynamicSkillsEnabled) {

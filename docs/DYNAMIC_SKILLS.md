@@ -31,9 +31,16 @@ spliced unsafely into SQL.
 
 ## Two ways to define a skill
 
-**Via an AI client (recommended):** ask it to add the skill. A well-behaved
-client will call `get-metadata` first to find the real table/column names,
-then call `save-skill` with the SQL and input schema it wrote. `save-skill`
+**Via an AI client (recommended):** ask it to add the skill. When
+`SKILLS_ENABLED` is on, the server sends explicit workflow instructions at
+connect time (get-metadata first, then save-skill) via MCP's server
+`instructions` field, and `get-metadata`'s own description points forward to
+`save-skill` — so a well-behaved client calls `get-metadata` first to find
+the real table/column names, then calls `save-skill` with the SQL and input
+schema it wrote. Not every client surfaces server `instructions` to the
+model equally well; if yours seems to skip straight to guessing table/column
+names or doesn't know it should look, tell it explicitly to call
+`get-metadata` before `save-skill`. `save-skill`
 validates everything (JSON shape, that every input property has a
 description, and a transaction+rollback dry-run of the SQL) before the
 skill becomes callable — a bad table/column name is rejected immediately,
