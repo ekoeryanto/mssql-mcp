@@ -17,7 +17,8 @@ import SimpleLogger from './logger/index.js';
 import SqlServerConnectionManager from './db/connection.js';
 import ToolHandlers from './tools/handlers.js';
 import { callDynamicSkill, loadDynamicTools, saveSkill } from './tools/dynamicSkills.js';
-import type { McpToolDef, SaveSkillInput } from './types/index.js';
+import { saveKnowledgeTool, searchKnowledgeTool } from './tools/knowledgeBase.js';
+import type { McpToolDef, SaveKnowledgeInput, SaveSkillInput } from './types/index.js';
 
 const SERVER_NAME = 'mssql-mcp';
 const SERVER_VERSION = '1.2.0';
@@ -81,6 +82,11 @@ async function runTool<T>(fn: (handlers: ToolHandlers) => Promise<T>): Promise<C
 // save-skill tool, no tb_mcp_skills lookups on tools/list, and any call to
 // a dynamic tool name is rejected. Static SQL tools are unaffected either way.
 const dynamicSkillsEnabled = config.skillsEnabled;
+
+// KNOWLEDGE_ENABLED=false turns off search-knowledge/save-knowledge
+// entirely: neither tool is listed, and calling either name returns
+// "Tool not found". Independent of dynamicSkillsEnabled.
+const knowledgeEnabled = config.knowledgeEnabled;
 
 const staticToolDefs: McpToolDef[] = [
   {
@@ -185,6 +191,50 @@ if (dynamicSkillsEnabled) {
   staticToolDefs.push(saveSkillToolDef);
 }
 
+const searchKnowledgeToolDef: McpToolDef = {
+  name: 'search-knowledge',
+  description:
+    "Search the knowledge base (notes, gotchas, SOP excerpts) for entries relevant to a query. Call this before answering domain-specific questions this server's tools alone don't explain.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Free-text search term, matched against title/content/keywords. Omit to list the most recently updated entries.',
+      },
+      limit: {
+        type: 'integer',
+        description: 'Max entries to return (1-50, default 10).',
+      },
+    },
+  },
+};
+
+const saveKnowledgeToolDef: McpToolDef = {
+  name: 'save-knowledge',
+  description:
+    'Add or update a knowledge base entry. Use this whenever you learn something about this database/domain worth remembering for future sessions — table semantics, gotchas, SOP notes.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: {
+        type: 'string',
+        description: 'Unique title identifying this entry. Saving with an existing title overwrites its content.',
+      },
+      content: { type: 'string', description: 'The note/fact/doc excerpt itself.' },
+      keywords: {
+        type: 'string',
+        description: 'Optional comma-separated keywords to help future searches find this entry.',
+      },
+    },
+    required: ['title', 'content'],
+  },
+};
+
+if (knowledgeEnabled) {
+  staticToolDefs.push(searchKnowledgeToolDef, saveKnowledgeToolDef);
+}
+
 const STATIC_TOOL_NAMES = new Set(staticToolDefs.map((t) => t.name));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -214,19 +264,32 @@ function validateStaticArgs(name: string, args: unknown): { ok: true } | { ok: f
  * Create an MCP server instance wired up to the static SQL tools and the
  * dynamic tb_mcp_skills-backed tools.
  */
-const SKILLS_WORKFLOW_INSTRUCTIONS = `
-To create a new reusable "skill" tool (e.g. "cek tagihan"), always follow this order:
+const SKILLS_WORKFLOW_INSTRUCTIONS = `To create a new reusable "skill" tool (e.g. "cek tagihan"), always follow this order:
 1. Call get-metadata (type: "tables", then type: "columns" with the real table name) to discover the actual table/column names. Never guess them.
 2. Compose generated_prompt (a JSON Schema string for the skill's input) and generated_sql (parameterized SQL using @paramName placeholders matching generated_prompt's properties) from what you found.
 3. Call save-skill with tool_name, description, keywords, generated_prompt, generated_sql. It validates everything (JSON shape, that every property has a description, and a transaction+rollback dry-run of the SQL) before the skill becomes callable.
-Do not call save-skill before get-metadata for a table you have not inspected in this session.`.trim();
+Do not call save-skill before get-metadata for a table you have not inspected in this session.`;
+
+const KNOWLEDGE_WORKFLOW_INSTRUCTIONS = `Before answering a domain-specific question this server's tools alone don't explain (table meanings, business rules, gotchas), call search-knowledge to check for a relevant note. After learning something about this database/domain worth remembering for future sessions, call save-knowledge to record it.`;
+
+function buildInstructions(): string | undefined {
+  const paragraphs: string[] = [];
+  if (dynamicSkillsEnabled) {
+    paragraphs.push(SKILLS_WORKFLOW_INSTRUCTIONS);
+  }
+  if (knowledgeEnabled) {
+    paragraphs.push(KNOWLEDGE_WORKFLOW_INSTRUCTIONS);
+  }
+  return paragraphs.length > 0 ? paragraphs.join('\n\n') : undefined;
+}
 
 function createMcpServer(): Server {
+  const instructions = buildInstructions();
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       capabilities: { tools: {} },
-      ...(dynamicSkillsEnabled ? { instructions: SKILLS_WORKFLOW_INSTRUCTIONS } : {}),
+      ...(instructions ? { instructions } : {}),
     },
   );
 
@@ -266,6 +329,26 @@ function createMcpServer(): Server {
         );
       case 'get-status':
         return runTool((h) => h.handleGetStatus());
+      case 'search-knowledge': {
+        if (!knowledgeEnabled) {
+          return { content: [{ type: 'text', text: 'Error: Tool not found: search-knowledge' }], isError: true };
+        }
+        const store = await getStoreOrNull();
+        if (!store) {
+          return { content: [{ type: 'text', text: 'Error: SQL Server is unavailable' }], isError: true };
+        }
+        return searchKnowledgeTool(store, logger, (args ?? {}) as { query?: unknown; limit?: unknown });
+      }
+      case 'save-knowledge': {
+        if (!knowledgeEnabled) {
+          return { content: [{ type: 'text', text: 'Error: Tool not found: save-knowledge' }], isError: true };
+        }
+        const store = await getStoreOrNull();
+        if (!store) {
+          return { content: [{ type: 'text', text: 'Error: SQL Server is unavailable' }], isError: true };
+        }
+        return saveKnowledgeTool(store, logger, args as unknown as SaveKnowledgeInput);
+      }
       default: {
         if (!dynamicSkillsEnabled) {
           return {
