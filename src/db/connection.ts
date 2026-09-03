@@ -3,6 +3,7 @@
  */
 
 import sql from 'mssql';
+import { quoteIdentifierPath } from './identifier.js';
 import type {
   SqlServerConfig,
   Logger,
@@ -34,6 +35,7 @@ export class SqlServerConnectionManager {
   private pool: sql.ConnectionPool | null = null;
   private readonly config: SqlServerConfig;
   private readonly logger: Logger;
+  private readonly skillsTable: string;
   private isConnecting = false;
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
@@ -42,6 +44,10 @@ export class SqlServerConnectionManager {
   constructor(config: SqlServerConfig, logger: Logger) {
     this.config = config;
     this.logger = logger;
+    // Validated and bracket-quoted once at startup: a table/schema name
+    // can't be bound as a query parameter the way values can, so it must
+    // be checked before ever being spliced into SQL text.
+    this.skillsTable = quoteIdentifierPath(config.skillsTable);
   }
 
   /**
@@ -331,7 +337,7 @@ export class SqlServerConnectionManager {
   async listSkills(): Promise<SkillRow[]> {
     await this.ensureConnected();
     const result = await this.pool!.request().query(
-      'SELECT tool_name, description, keywords, generated_prompt FROM tb_mcp_skills WHERE is_active = 1',
+      `SELECT tool_name, description, keywords, generated_prompt FROM ${this.skillsTable} WHERE is_active = 1`,
     );
     return result.recordset as SkillRow[];
   }
@@ -344,7 +350,7 @@ export class SqlServerConnectionManager {
     const request = this.pool!.request();
     request.input('toolName', sql.VarChar, toolName);
     const result = await request.query(
-      'SELECT generated_prompt, generated_sql FROM tb_mcp_skills WHERE tool_name = @toolName AND is_active = 1',
+      `SELECT generated_prompt, generated_sql FROM ${this.skillsTable} WHERE tool_name = @toolName AND is_active = 1`,
     );
     const row = result.recordset[0] as { generated_prompt: string; generated_sql: string } | undefined;
     return row ? { generated_prompt: row.generated_prompt, generated_sql: row.generated_sql } : null;
@@ -408,8 +414,8 @@ export class SqlServerConnectionManager {
     request.input('generatedPrompt', sql.NVarChar(sql.MAX), skill.generated_prompt);
     request.input('generatedSql', sql.NVarChar(sql.MAX), skill.generated_sql);
     await request.query(`
-      IF EXISTS (SELECT 1 FROM tb_mcp_skills WHERE tool_name = @toolName)
-        UPDATE tb_mcp_skills
+      IF EXISTS (SELECT 1 FROM ${this.skillsTable} WHERE tool_name = @toolName)
+        UPDATE ${this.skillsTable}
         SET description = @description,
             keywords = @keywords,
             generated_prompt = @generatedPrompt,
@@ -418,7 +424,7 @@ export class SqlServerConnectionManager {
             updated_at = SYSUTCDATETIME()
         WHERE tool_name = @toolName
       ELSE
-        INSERT INTO tb_mcp_skills (tool_name, description, keywords, generated_prompt, generated_sql, is_active)
+        INSERT INTO ${this.skillsTable} (tool_name, description, keywords, generated_prompt, generated_sql, is_active)
         VALUES (@toolName, @description, @keywords, @generatedPrompt, @generatedSql, 1);
     `);
   }

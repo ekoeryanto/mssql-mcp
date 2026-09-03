@@ -11,6 +11,7 @@ export interface SqlServerConfig {
   encrypt: boolean;
   trustServerCertificate: boolean;
   allowMutations: boolean;
+  skillsTable: string;
   connectionPoolMin?: number;
   connectionPoolMax?: number;
   requestTimeout?: number;

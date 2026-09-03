@@ -10,6 +10,19 @@ to add or change one. See the design rationale in
 Run `scripts/sql/create-tb-mcp-skills.sql` once against your target
 database.
 
+By default the server looks for a table named `tb_mcp_skills` in the
+connected database. To use a different name — or a schema/database-qualified
+one — set `SKILLS_TABLE` in your environment, e.g.:
+
+```env
+SKILLS_TABLE=master.dbo.this_skill
+```
+
+Accepted forms: `table`, `schema.table`, or `database.schema.table`, using
+only letters, digits, and underscores in each part. The server validates and
+quotes this once at startup — an invalid value fails fast instead of being
+spliced unsafely into SQL.
+
 ## Two ways to define a skill
 
 **Via an AI client (recommended):** ask it to add the skill. A well-behaved

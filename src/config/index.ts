@@ -64,6 +64,7 @@ export function loadConfig(): {
       encrypt: getEnvBoolean('SQLSERVER_ENCRYPT', false),
       trustServerCertificate: getEnvBoolean('SQLSERVER_TRUST_SERVER_CERTIFICATE', true),
       allowMutations: getEnvBoolean('SQLSERVER_ALLOW_MUTATIONS', false),
+      skillsTable: getEnv('SKILLS_TABLE', 'tb_mcp_skills'),
       connectionPoolMin: getEnvNumber('SQLSERVER_CONNECTION_POOL_MIN', 2),
       connectionPoolMax: getEnvNumber('SQLSERVER_CONNECTION_POOL_MAX', 10),
       requestTimeout: getEnvNumber('SQLSERVER_REQUEST_TIMEOUT', 30000),

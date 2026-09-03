@@ -1,6 +1,10 @@
 -- Creates the tb_mcp_skills table used by the dynamic-skills feature.
 -- Run once against the target database before using `save-skill` or
 -- inserting skills manually.
+--
+-- If you want a different table name (or a schema/database-qualified one,
+-- e.g. dbo.my_skills or master.dbo.my_skills), rename it below and set the
+-- matching SKILLS_TABLE env var so the server queries the same table.
 
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'tb_mcp_skills')
 BEGIN
