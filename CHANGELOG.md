@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.1](https://github.com/ekoeryanto/mssql-mcp/compare/1.4.0...1.4.1) (2026-09-04)
+
+### Bug Fixes
+
+* **ci:** release tag no v ([5f53f66](https://github.com/ekoeryanto/mssql-mcp/commit/5f53f66a4ffbfa4ce38d0ae60bfa4696ce82da19))
+
 # [1.4.0](https://github.com/ekoeryanto/mssql-mcp/compare/1.3.0...1.4.0) (2026-09-04)
 
 ### Bug Fixes
