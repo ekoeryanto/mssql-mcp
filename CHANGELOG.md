@@ -1,5 +1,19 @@
 # Changelog
 
+# [1.4.0](https://github.com/ekoeryanto/mssql-mcp/compare/1.3.0...1.4.0) (2026-09-04)
+
+### Bug Fixes
+
+* enforce non-empty title/content and clearer disabled-tool messages ([054a0a6](https://github.com/ekoeryanto/mssql-mcp/commit/054a0a6483b7f3e97217d0eb1f00c74eb5a64184))
+
+### Features
+
+* add search-knowledge/save-knowledge orchestration ([c4e8d2b](https://github.com/ekoeryanto/mssql-mcp/commit/c4e8d2bdf5b263eb9011a737f491230d7ca9e25f))
+* add searchKnowledge/saveKnowledge to SqlServerConnectionManager ([4ac8e41](https://github.com/ekoeryanto/mssql-mcp/commit/4ac8e4132f1b63367b25b37b187be586555b3afd))
+* add tb_mcp_knowledge DDL script ([6447e4c](https://github.com/ekoeryanto/mssql-mcp/commit/6447e4ca5d0d3206e896efd43b730478555a6273))
+* add types and config for the Knowledge Base feature ([1b8b49d](https://github.com/ekoeryanto/mssql-mcp/commit/1b8b49d7da50d014c469cd90a1ea882c4c4cb474))
+* wire search-knowledge/save-knowledge into the MCP server ([f4bee45](https://github.com/ekoeryanto/mssql-mcp/commit/f4bee459c726c2ad2412c91ae3cd86d2ceeed9d0))
+
 # [1.3.0](https://github.com/ekoeryanto/mssql-mcp/compare/1.2.0...1.3.0) (2026-09-03)
 
 ### Bug Fixes
