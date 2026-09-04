@@ -16,9 +16,10 @@ a future AI session will read and may act on whatever is saved there.
 Run `scripts/sql/create-tb-mcp-knowledge.sql` once against your target
 database.
 
-The feature is on by default. Set `KNOWLEDGE_ENABLED=false` to turn it off
-entirely — `search-knowledge`/`save-knowledge` disappear from `tools/list`
-and calling either by name returns `isError: true`.
+The feature is off by default (for a portable, zero-config server). Set
+`KNOWLEDGE_ENABLED=true` to turn it on — otherwise `search-knowledge`/
+`save-knowledge` are absent from `tools/list` and calling either by name
+returns `isError: true`.
 
 To use a different table name — or a schema/database-qualified one — set
 `KNOWLEDGE_TABLE`, independent of Dynamic Skills' `SKILLS_TABLE`:

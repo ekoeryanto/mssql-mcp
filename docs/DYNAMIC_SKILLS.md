@@ -10,11 +10,12 @@ to add or change one. See the design rationale in
 Run `scripts/sql/create-tb-mcp-skills.sql` once against your target
 database.
 
-The feature is on by default. Set `SKILLS_ENABLED=false` to turn it off
-entirely — `save-skill` disappears from `tools/list`, no `tb_mcp_skills`
-lookups happen on `tools/list`, and calling any non-static tool name
-returns `isError:true` ("dynamic skills are disabled") instead of running
-it. The 6 static SQL tools are unaffected either way.
+The feature is off by default (for a portable, zero-config server). Set
+`SKILLS_ENABLED=true` to turn it on — otherwise `save-skill` is absent from
+`tools/list`, no `tb_mcp_skills` lookups happen on `tools/list`, and calling
+any non-static tool name returns `isError:true` ("dynamic skills are
+disabled") instead of running it. The 6 static SQL tools are unaffected
+either way.
 
 By default the server looks for a table named `tb_mcp_skills` in the
 connected database. To use a different name — or a schema/database-qualified
@@ -32,7 +33,7 @@ spliced unsafely into SQL.
 ## Two ways to define a skill
 
 **Via an AI client (recommended):** ask it to add the skill. When
-`SKILLS_ENABLED` is on, the server sends explicit workflow instructions at
+`SKILLS_ENABLED=true`, the server sends explicit workflow instructions at
 connect time (get-metadata first, then save-skill) via MCP's server
 `instructions` field, and `get-metadata`'s own description points forward to
 `save-skill` — so a well-behaved client calls `get-metadata` first to find

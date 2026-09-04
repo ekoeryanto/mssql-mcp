@@ -75,7 +75,7 @@ export function loadConfig(): {
     logLevel: (process.env.LOG_LEVEL as LogLevel) || 'info',
     serverName: getEnv('MCP_SERVER_NAME', 'mssql-mcp'),
     authToken: process.env.MCP_SERVER_AUTH_TOKEN,
-    skillsEnabled: getEnvBoolean('SKILLS_ENABLED', true),
-    knowledgeEnabled: getEnvBoolean('KNOWLEDGE_ENABLED', true),
+    skillsEnabled: getEnvBoolean('SKILLS_ENABLED', false),
+    knowledgeEnabled: getEnvBoolean('KNOWLEDGE_ENABLED', false),
   };
 }
