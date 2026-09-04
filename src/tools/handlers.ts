@@ -136,15 +136,20 @@ export class ToolHandlers {
     name: string;
     params?: Record<string, { value?: unknown; output?: boolean }>;
   }): Promise<ProcedureResult> {
-    if (!this.allowMutations) {
-      return {
-        success: false,
-        error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable executing procedures.',
-      };
-    }
-
     try {
       const { name, params } = input;
+
+      if (!this.allowMutations) {
+        const check = await this.db.checkProcedureReadOnly(name);
+        if (!check.readOnly) {
+          const reason = check.reason ?? `'${name}' could not be verified as read-only`;
+          return {
+            success: false,
+            error: `Mutations are disabled: ${reason}. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.`,
+          };
+        }
+      }
+
       const result = await this.db.executeStoredProcedure(name, params);
 
       return {

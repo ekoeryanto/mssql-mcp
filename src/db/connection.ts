@@ -15,6 +15,21 @@ import type {
   SaveKnowledgeInput,
 } from '../types/index.js';
 
+/** Statements that directly mutate data or schema. */
+const DIRECT_MUTATION_KEYWORDS = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|MERGE)\b/i;
+
+/** Matches an `EXEC`/`EXECUTE` call site, up to (not including) its callee. */
+const EXEC_PREFIX_PATTERN = /\bEXEC(?:UTE)?\s+(?:@\w+\s*=\s*)?/gi;
+
+/**
+ * Matches the callee right after an EXEC_PREFIX_PATTERN match: a possibly
+ * schema/database-qualified, possibly bracketed procedure name. Also matches
+ * the tell-tale start of a dynamic call (`(`, `@variable`, or
+ * `sp_executesql`) so those can be flagged as unverifiable rather than
+ * mistaken for a real procedure name.
+ */
+const CALLEE_TOKEN_PATTERN = /^(\(|@\w+|sp_executesql\b|(?:\[[^\]]+\]|\w+)(?:\.(?:\[[^\]]+\]|\w+)){0,2})/i;
+
 /**
  * Infer a SQL Server type for a stored procedure output parameter from its
  * JS value, since `mssql` requires an explicit `ISqlType` for output params
@@ -217,6 +232,94 @@ export class SqlServerConnectionManager {
       this.logger.error('Stored procedure execution failed', error);
       throw error;
     }
+  }
+
+  /**
+   * Fetch a stored procedure's T-SQL body via OBJECT_DEFINITION, so callers
+   * can scan it for mutation keywords before running it. Returns null when
+   * the procedure doesn't exist or its definition isn't visible (e.g. it's
+   * encrypted with WITH ENCRYPTION, or the login lacks VIEW DEFINITION) —
+   * callers should treat null as "can't verify, so don't assume read-only".
+   */
+  async getProcedureDefinition(procedureName: string): Promise<string | null> {
+    await this.ensureConnected();
+    const request = this.pool!.request();
+    request.input('procName', sql.NVarChar, procedureName);
+    const result = await request.query('SELECT OBJECT_DEFINITION(OBJECT_ID(@procName)) as definition');
+    const row = result.recordset[0] as { definition: string | null } | undefined;
+    return row?.definition ?? null;
+  }
+
+  /**
+   * Recursively verify that a stored procedure — and every procedure it
+   * calls via EXEC/EXECUTE, transitively — contains no mutation statement.
+   * Used to gate execute-procedure when SQLSERVER_ALLOW_MUTATIONS=false: a
+   * proc that only reads is allowed to run even with mutations disabled,
+   * but one that mutates directly, calls something that does, or invokes
+   * dynamic SQL that can't be statically resolved (EXEC(@sql), EXEC @sql,
+   * sp_executesql) is rejected, fail-closed.
+   *
+   * `visited` collapses call cycles: each procedure's own text is fully
+   * scanned for direct mutations the first time it's visited, so revisiting
+   * it via a back-edge can't hide a mutation — it only stops infinite
+   * recursion on legitimate recursive procedures.
+   */
+  async checkProcedureReadOnly(
+    procedureName: string,
+    visited: Set<string> = new Set(),
+    depth = 0,
+  ): Promise<{ readOnly: boolean; reason?: string }> {
+    const key = procedureName.trim().toLowerCase();
+    if (visited.has(key)) {
+      return { readOnly: true };
+    }
+    visited.add(key);
+
+    if (depth > 10) {
+      return {
+        readOnly: false,
+        reason: `the call chain through '${procedureName}' is too deep (>10 levels) to verify`,
+      };
+    }
+
+    const definition = await this.getProcedureDefinition(procedureName);
+    if (definition === null) {
+      return {
+        readOnly: false,
+        reason: `the definition of '${procedureName}' could not be read (it may not exist, be encrypted, or the login may lack VIEW DEFINITION)`,
+      };
+    }
+
+    if (DIRECT_MUTATION_KEYWORDS.test(definition)) {
+      return { readOnly: false, reason: `'${procedureName}' contains a direct mutation statement` };
+    }
+
+    const calledProcs = new Set<string>();
+    for (const prefixMatch of definition.matchAll(EXEC_PREFIX_PATTERN)) {
+      const rest = definition.slice(prefixMatch.index + prefixMatch[0].length);
+      const calleeMatch = CALLEE_TOKEN_PATTERN.exec(rest);
+      if (calleeMatch) {
+        calledProcs.add(calleeMatch[1]);
+      }
+    }
+
+    for (const call of calledProcs) {
+      if (call === '(' || call.startsWith('@') || call.toLowerCase() === 'sp_executesql') {
+        return {
+          readOnly: false,
+          reason: `'${procedureName}' executes dynamic SQL that can't be statically verified as read-only`,
+        };
+      }
+      const nested = await this.checkProcedureReadOnly(call, visited, depth + 1);
+      if (!nested.readOnly) {
+        return {
+          readOnly: false,
+          reason: nested.reason ?? `'${procedureName}' calls '${call}', which mutates`,
+        };
+      }
+    }
+
+    return { readOnly: true };
   }
 
   /**

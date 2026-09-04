@@ -259,6 +259,17 @@ List all stored procedures.
 
 Execute a stored procedure with optional parameters.
 
+When `SQLSERVER_ALLOW_MUTATIONS=false` (the default), the server reads the
+procedure's body via `OBJECT_DEFINITION` and scans it for direct mutation
+statements (`INSERT`/`UPDATE`/`DELETE`/`DROP`/`TRUNCATE`/`ALTER`/`CREATE`/
+`MERGE`), then recursively does the same for every procedure it calls via
+`EXEC`/`EXECUTE`, transitively — a proc that only reads, directly or through
+other read-only procs it calls, still executes. It's rejected with
+`isError`/`success: false` when any procedure in that call chain mutates,
+its definition can't be read (missing, encrypted, or the login lacks
+`VIEW DEFINITION`), or it invokes dynamic SQL that can't be statically
+resolved (`EXEC(@sql)`, `EXEC @sql`, `sp_executesql`).
+
 **Request:**
 ```json
 {
