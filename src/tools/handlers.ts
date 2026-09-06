@@ -5,7 +5,8 @@
 import type { QueryResult, ExecuteResult, MetadataResult, ProcedureResult, Logger } from '../types/index.js';
 import type SqlServerConnectionManager from '../db/connection.js';
 
-const MUTATION_KEYWORDS = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE)\b/i;
+const MUTATION_KEYWORDS =
+  /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE|MERGE|GRANT|REVOKE|DENY|BACKUP|RESTORE|RECONFIGURE|DBCC|IDENTITY_INSERT|INTO|sp_rename|sp_configure|xp_cmdshell)\b/i;
 
 export class ToolHandlers {
   private readonly db: SqlServerConnectionManager;

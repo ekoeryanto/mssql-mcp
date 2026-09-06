@@ -15,8 +15,23 @@ import type {
   SaveKnowledgeInput,
 } from '../types/index.js';
 
-/** Statements that directly mutate data or schema. */
-const DIRECT_MUTATION_KEYWORDS = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|MERGE)\b/i;
+/**
+ * Statements/verbs that mutate data, schema, permissions, or server state,
+ * or that let the current login escape SQL entirely (xp_cmdshell). This is a
+ * best-effort static blocklist, NOT a sound classifier of arbitrary T-SQL —
+ * see the warning on checkProcedureReadOnly below.
+ */
+const DIRECT_MUTATION_KEYWORDS =
+  /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|MERGE|GRANT|REVOKE|DENY|BACKUP|RESTORE|RECONFIGURE|DBCC|IDENTITY_INSERT|sp_rename|sp_configure|xp_cmdshell)\b/i;
+
+/**
+ * Detects `SELECT ... INTO <table>` — creates a table as a side effect, so
+ * it counts as a mutation even though the statement starts with SELECT. Kept
+ * as its own simple, linear pattern (rather than folded into the alternation
+ * above) to avoid the backtracking blowup a `.*` inside an alternation can
+ * cause on a long, adversarial procedure body.
+ */
+const SELECT_INTO_PATTERN = /\bSELECT\b[^;]*?\bINTO\b/i;
 
 /** Matches an `EXEC`/`EXECUTE` call site, up to (not including) its callee. */
 const EXEC_PREFIX_PATTERN = /\bEXEC(?:UTE)?\s+(?:@\w+\s*=\s*)?/gi;
@@ -29,6 +44,21 @@ const EXEC_PREFIX_PATTERN = /\bEXEC(?:UTE)?\s+(?:@\w+\s*=\s*)?/gi;
  * mistaken for a real procedure name.
  */
 const CALLEE_TOKEN_PATTERN = /^(\(|@\w+|sp_executesql\b|(?:\[[^\]]+\]|\w+)(?:\.(?:\[[^\]]+\]|\w+)){0,2})/i;
+
+/**
+ * Strips `--` line comments, `/* *\/` block comments, and quoted string
+ * literals from a T-SQL body before it's scanned for mutation keywords or
+ * EXEC call sites. Without this, a keyword split across a comment (e.g.
+ * `DRO/*x*\/P TABLE t`) would parse as a real statement in SQL Server but
+ * dodge the regex — this closes that specific evasion. It's still a
+ * heuristic: see the warning on checkProcedureReadOnly.
+ */
+function stripSqlNoise(sqlText: string): string {
+  return sqlText
+    .replace(/--[^\r\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/'(?:[^']|'')*'/g, "''");
+}
 
 /**
  * Infer a SQL Server type for a stored procedure output parameter from its
@@ -263,6 +293,17 @@ export class SqlServerConnectionManager {
    * scanned for direct mutations the first time it's visited, so revisiting
    * it via a back-edge can't hide a mutation — it only stops infinite
    * recursion on legitimate recursive procedures.
+   *
+   * WARNING: this is a static keyword scan, not a real T-SQL parser — it is
+   * a defense-in-depth heuristic, not a sound security boundary. It cannot
+   * see through server-side dynamic SQL built from string fragments (e.g.
+   * concatenating `'DEL' + 'ETE'` and running it via sp_executesql/EXEC —
+   * already rejected as unverifiable), nor can any fixed keyword list ever
+   * be proven complete against future T-SQL syntax. The robust fix is to
+   * run with a database login that only has SELECT permission when
+   * SQLSERVER_ALLOW_MUTATIONS=false, so SQL Server itself enforces the
+   * boundary; this check is a convenience on top of that, not a substitute
+   * for it.
    */
   async checkProcedureReadOnly(
     procedureName: string,
@@ -290,13 +331,15 @@ export class SqlServerConnectionManager {
       };
     }
 
-    if (DIRECT_MUTATION_KEYWORDS.test(definition)) {
+    const cleanDefinition = stripSqlNoise(definition);
+
+    if (DIRECT_MUTATION_KEYWORDS.test(cleanDefinition) || SELECT_INTO_PATTERN.test(cleanDefinition)) {
       return { readOnly: false, reason: `'${procedureName}' contains a direct mutation statement` };
     }
 
     const calledProcs = new Set<string>();
-    for (const prefixMatch of definition.matchAll(EXEC_PREFIX_PATTERN)) {
-      const rest = definition.slice(prefixMatch.index + prefixMatch[0].length);
+    for (const prefixMatch of cleanDefinition.matchAll(EXEC_PREFIX_PATTERN)) {
+      const rest = cleanDefinition.slice(prefixMatch.index + prefixMatch[0].length);
       const calleeMatch = CALLEE_TOKEN_PATTERN.exec(rest);
       if (calleeMatch) {
         calledProcs.add(calleeMatch[1]);

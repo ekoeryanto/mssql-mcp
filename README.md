@@ -23,6 +23,33 @@ A flexible and stable Model Context Protocol (MCP) server for Microsoft SQL Serv
 - SQL Server 2019+ (local or remote)
 - Docker & Docker Compose (for containerized setup)
 
+### Install via npm
+
+The server is published as [`@pake/mssql-mcp`](https://www.npmjs.com/package/@pake/mssql-mcp). Run it directly with `npx`, no clone required — most MCP clients that spawn a stdio server can point straight at this:
+
+```bash
+npx -y @pake/mssql-mcp
+```
+
+```json
+{
+  "mcpServers": {
+    "mssql-mcp": {
+      "command": "npx",
+      "args": ["-y", "@pake/mssql-mcp"],
+      "env": {
+        "SQLSERVER_SERVER": "localhost",
+        "SQLSERVER_DATABASE": "master",
+        "SQLSERVER_USERNAME": "sa",
+        "SQLSERVER_PASSWORD": "YourStrong@Password"
+      }
+    }
+  }
+}
+```
+
+See [Configuration](#configuration) below for the full list of environment variables. For the HTTP transport, Docker, or hacking on the server itself, use the local setup below instead.
+
 ### Local Setup
 
 1. **Clone the repository**

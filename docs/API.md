@@ -260,15 +260,26 @@ List all stored procedures.
 Execute a stored procedure with optional parameters.
 
 When `SQLSERVER_ALLOW_MUTATIONS=false` (the default), the server reads the
-procedure's body via `OBJECT_DEFINITION` and scans it for direct mutation
-statements (`INSERT`/`UPDATE`/`DELETE`/`DROP`/`TRUNCATE`/`ALTER`/`CREATE`/
-`MERGE`), then recursively does the same for every procedure it calls via
-`EXEC`/`EXECUTE`, transitively — a proc that only reads, directly or through
-other read-only procs it calls, still executes. It's rejected with
+procedure's body via `OBJECT_DEFINITION` and scans it for mutating
+statements/verbs (`INSERT`/`UPDATE`/`DELETE`/`DROP`/`TRUNCATE`/`ALTER`/
+`CREATE`/`MERGE`/`GRANT`/`REVOKE`/`DENY`/`BACKUP`/`RESTORE`/`RECONFIGURE`/
+`DBCC`/`SELECT...INTO`/`SET IDENTITY_INSERT`/`sp_rename`/`sp_configure`/
+`xp_cmdshell`), then recursively does the same for every procedure it calls
+via `EXEC`/`EXECUTE`, transitively — a proc that only reads, directly or
+through other read-only procs it calls, still executes. It's rejected with
 `isError`/`success: false` when any procedure in that call chain mutates,
 its definition can't be read (missing, encrypted, or the login lacks
 `VIEW DEFINITION`), or it invokes dynamic SQL that can't be statically
 resolved (`EXEC(@sql)`, `EXEC @sql`, `sp_executesql`).
+
+> [!WARNING]
+> This is a static keyword scan, not a real T-SQL parser, so it is
+> defense-in-depth rather than a hard security boundary — no fixed keyword
+> list can be proven complete against every current and future T-SQL
+> construct. For a real guarantee, connect with a SQL login that only has
+> `SELECT` permission whenever `SQLSERVER_ALLOW_MUTATIONS=false`, so SQL
+> Server itself enforces read-only access regardless of what this check
+> catches or misses.
 
 **Request:**
 ```json
