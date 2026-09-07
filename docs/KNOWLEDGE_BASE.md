@@ -71,6 +71,30 @@ Calling `search-knowledge` with `{"query": "tagihan"}` returns:
 Calling `search-knowledge` with no arguments lists the most recently
 updated entries (default 10, max 50 via `limit`).
 
+## Autosaving large results
+
+Any tool result (query, execute-procedure, a dynamic skill call, even
+search-knowledge/save-knowledge itself) whose text is large enough to be a
+token-heavy payload can be offloaded automatically into `tb_mcp_knowledge`
+instead of being returned in full.
+
+Set `AUTOSAVE_TO_KNOWLEDGE=true` to turn it on — it has no effect unless
+`KNOWLEDGE_ENABLED=true` is also set, since it reuses the same store. Off by
+default. `AUTOSAVE_THRESHOLD_CHARS` (default `8000`) controls how large a
+result's text has to be, in characters, before it's offloaded.
+
+When triggered, the full text is saved under a title like
+`autosave:query:1735689600000`, and the tool call instead returns a short
+preview plus a pointer telling the client to `search-knowledge` for that
+title to get the rest. Error results are never autosaved. If the save
+itself fails (e.g. SQL Server unavailable), the original full result is
+returned unchanged rather than silently dropped.
+
+This pairs with Dynamic Skills: the pointer note also suggests turning the
+query into a reusable skill with `save-skill` if it's likely to run again,
+and the server's `instructions` nudge a well-behaved AI client to do the
+same whenever it notices itself repeating a query shape.
+
 ## Notes
 
 - Removing an entry is manual DB administration

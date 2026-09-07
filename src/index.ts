@@ -18,6 +18,7 @@ import SqlServerConnectionManager from './db/connection.js';
 import ToolHandlers from './tools/handlers.js';
 import { callDynamicSkill, loadDynamicTools, saveSkill } from './tools/dynamicSkills.js';
 import { saveKnowledgeTool, searchKnowledgeTool } from './tools/knowledgeBase.js';
+import { maybeAutosaveLargeResult } from './tools/autosaveKnowledge.js';
 import type { McpToolDef, SaveKnowledgeInput, SaveSkillInput } from './types/index.js';
 
 const SERVER_NAME = 'mssql-mcp';
@@ -87,6 +88,13 @@ const dynamicSkillsEnabled = config.skillsEnabled;
 // entirely: neither tool is listed, and calling either name returns
 // "Tool not found". Independent of dynamicSkillsEnabled.
 const knowledgeEnabled = config.knowledgeEnabled;
+
+// AUTOSAVE_TO_KNOWLEDGE=true offloads any tool result whose text exceeds
+// AUTOSAVE_THRESHOLD_CHARS into tb_mcp_knowledge, replacing it with a
+// preview + pointer. Only takes effect when knowledgeEnabled is also true
+// (it reuses the same store), and is off by default.
+const autosaveEnabled = config.autosaveToKnowledge && knowledgeEnabled;
+const autosaveThresholdChars = config.autosaveThresholdChars;
 
 const staticToolDefs: McpToolDef[] = [
   {
@@ -269,7 +277,8 @@ const SKILLS_WORKFLOW_INSTRUCTIONS = `To create a new reusable "skill" tool (e.g
 1. Call get-metadata (type: "tables", then type: "columns" with the real table name) to discover the actual table/column names. Never guess them.
 2. Compose generated_prompt (a JSON Schema string for the skill's input) and generated_sql (parameterized SQL using @paramName placeholders matching generated_prompt's properties) from what you found.
 3. Call save-skill with tool_name, description, keywords, generated_prompt, generated_sql. It validates everything (JSON shape, that every property has a description, and a transaction+rollback dry-run of the SQL) before the skill becomes callable.
-Do not call save-skill before get-metadata for a table you have not inspected in this session.`;
+Do not call save-skill before get-metadata for a table you have not inspected in this session.
+If you notice yourself running the same or a near-identical query/procedure shape more than once in a session (same SQL, different literal values), stop repeating it ad hoc and generalize it into a skill with save-skill instead, following the same order above.`;
 
 const KNOWLEDGE_WORKFLOW_INSTRUCTIONS = `Before answering a domain-specific question this server's tools alone don't explain (table meanings, business rules, gotchas), call search-knowledge to check for a relevant note. After learning something about this database/domain worth remembering for future sessions, call save-knowledge to record it.`;
 
@@ -313,6 +322,7 @@ function createMcpServer(): Server {
       }
     }
 
+    const result = await (async (): Promise<CallToolResult> => {
     switch (name) {
       case 'query':
         return runTool((h) => h.handleQuery(args as { query: string }));
@@ -376,6 +386,16 @@ function createMcpServer(): Server {
         return callDynamicSkill(store, logger, name, (args ?? {}) as Record<string, unknown>);
       }
     }
+    })();
+
+    if (!autosaveEnabled) {
+      return result;
+    }
+    const knowledgeStore = await getStoreOrNull();
+    if (!knowledgeStore) {
+      return result;
+    }
+    return maybeAutosaveLargeResult(knowledgeStore, logger, name, autosaveThresholdChars, result);
   });
 
   return server;

@@ -48,6 +48,8 @@ export function loadConfig(): {
   authToken?: string;
   skillsEnabled: boolean;
   knowledgeEnabled: boolean;
+  autosaveToKnowledge: boolean;
+  autosaveThresholdChars: number;
 } {
   debugLog('Loading configuration...');
   debugLog(
@@ -77,5 +79,7 @@ export function loadConfig(): {
     authToken: process.env.MCP_SERVER_AUTH_TOKEN,
     skillsEnabled: getEnvBoolean('SKILLS_ENABLED', false),
     knowledgeEnabled: getEnvBoolean('KNOWLEDGE_ENABLED', false),
+    autosaveToKnowledge: getEnvBoolean('AUTOSAVE_TO_KNOWLEDGE', false),
+    autosaveThresholdChars: getEnvNumber('AUTOSAVE_THRESHOLD_CHARS', 8000),
   };
 }
