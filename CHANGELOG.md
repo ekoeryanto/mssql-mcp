@@ -1,5 +1,16 @@
 # Changelog
 
+# [1.5.0](https://github.com/ekoeryanto/mssql-mcp/compare/1.4.1...1.5.0) (2026-09-07)
+
+### Bug Fixes
+
+* prevent mutation when exec is granted ([7e5f0ff](https://github.com/ekoeryanto/mssql-mcp/commit/7e5f0ffc21851efd4dfac8b606c393bf0e36b6f4))
+
+### Features
+
+* autosave large tool results to knowledge base ([4a066c5](https://github.com/ekoeryanto/mssql-mcp/commit/4a066c59382fcedde59e730fa95854b8b6ace5e6))
+* publish as @pake/mssql-mcp on npm; harden execute-procedure mutation check ([1aa27f5](https://github.com/ekoeryanto/mssql-mcp/commit/1aa27f5f35ab85cd2074a2c134fa0714da90c0a6))
+
 ## [1.4.1](https://github.com/ekoeryanto/mssql-mcp/compare/1.4.0...1.4.1) (2026-09-04)
 
 ### Bug Fixes
