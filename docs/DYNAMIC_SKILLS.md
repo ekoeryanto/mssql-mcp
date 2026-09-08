@@ -41,7 +41,12 @@ the real table/column names, then calls `save-skill` with the SQL and input
 schema it wrote. Not every client surfaces server `instructions` to the
 model equally well; if yours seems to skip straight to guessing table/column
 names or doesn't know it should look, tell it explicitly to call
-`get-metadata` before `save-skill`. `save-skill`
+`get-metadata` before `save-skill`. The same instructions also nudge a
+well-behaved client to turn a query into a skill on its own initiative
+whenever it notices itself running the same or a near-identical SQL shape
+more than once in a session, instead of repeating it ad hoc — there's no
+detection code behind this, it relies entirely on the client following the
+instructions. `save-skill`
 validates everything (JSON shape, that every input property has a
 description, and a transaction+rollback dry-run of the SQL) before the
 skill becomes callable — a bad table/column name is rejected immediately,

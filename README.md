@@ -12,6 +12,7 @@ A flexible and stable Model Context Protocol (MCP) server for Microsoft SQL Serv
 - ✅ **Retry Logic**: Automatic reconnection with exponential backoff
 - ✅ **Error Handling**: Comprehensive error handling and logging
 - ✅ **Docker Ready**: Includes Dockerfile and docker-compose configuration
+- ✅ **Autosave to Knowledge**: Optionally offloads large, token-heavy tool results into the knowledge base automatically
 - ✅ **Type Safe**: Full TypeScript support with strict type checking
 - ✅ **Production Ready**: Suitable for public repositories and enterprise use
 
@@ -127,6 +128,12 @@ SQLSERVER_TRUST_SERVER_CERTIFICATE=true
 # Knowledge Base feature (optional, off by default — see docs/KNOWLEDGE_BASE.md)
 # KNOWLEDGE_ENABLED=false
 # KNOWLEDGE_TABLE=tb_mcp_knowledge
+
+# Autosave large tool results to the knowledge base (optional, off by
+# default, requires KNOWLEDGE_ENABLED=true — see "Autosaving large results"
+# in docs/KNOWLEDGE_BASE.md)
+# AUTOSAVE_TO_KNOWLEDGE=false
+# AUTOSAVE_THRESHOLD_CHARS=8000
 
 # Connection Pool
 SQLSERVER_CONNECTION_POOL_MIN=2
@@ -309,6 +316,16 @@ Beyond the SQL tools, this server can store and search free-form notes —
 table semantics, gotchas, SOP excerpts — via `search-knowledge` and
 `save-knowledge`, backed by a `tb_mcp_knowledge` database table — see
 [docs/KNOWLEDGE_BASE.md](docs/KNOWLEDGE_BASE.md).
+
+### Autosaving Large Results
+
+When `AUTOSAVE_TO_KNOWLEDGE=true` (and `KNOWLEDGE_ENABLED=true`), any tool
+result whose text exceeds `AUTOSAVE_THRESHOLD_CHARS` (default 8000) — a
+big query, a large stored-procedure recordset, even a dynamic skill call —
+is saved into the knowledge base instead of being returned in full, and
+replaced with a short preview plus a `search-knowledge` pointer. This is
+off by default. See "Autosaving large results" in
+[docs/KNOWLEDGE_BASE.md](docs/KNOWLEDGE_BASE.md#autosaving-large-results).
 
 ## Architecture
 
