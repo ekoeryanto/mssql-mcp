@@ -11,6 +11,12 @@ import type { KnowledgeStore, Logger } from '../types/index.js';
 
 const PREVIEW_CHARS = 1500;
 
+// Results of these tools come from the knowledge table itself. Autosaving them
+// re-ingests (and JSON-escapes) earlier entries on every call, so the table
+// snowballs and search-knowledge slows to a timeout; it also makes the
+// "retrieve the rest via search-knowledge" pointer circular.
+const AUTOSAVE_EXCLUDED_TOOLS = new Set(['search-knowledge', 'save-knowledge']);
+
 function resultText(result: CallToolResult): string {
   return result.content
     .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
@@ -25,7 +31,7 @@ export async function maybeAutosaveLargeResult(
   thresholdChars: number,
   result: CallToolResult,
 ): Promise<CallToolResult> {
-  if (result.isError) {
+  if (result.isError || AUTOSAVE_EXCLUDED_TOOLS.has(toolName)) {
     return result;
   }
 

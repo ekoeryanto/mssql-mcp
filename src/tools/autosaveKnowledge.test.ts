@@ -29,6 +29,21 @@ describe('maybeAutosaveLargeResult', () => {
     expect(out).toEqual(result);
   });
 
+  test('never autosaves knowledge tools, even when large (avoids a feedback loop)', async () => {
+    let saves = 0;
+    const store = makeStore({
+      saveKnowledge: async () => {
+        saves++;
+      },
+    });
+    const result = { content: [{ type: 'text' as const, text: 'x'.repeat(9000) }] };
+    for (const tool of ['search-knowledge', 'save-knowledge']) {
+      const out = await maybeAutosaveLargeResult(store, makeLogger(), tool, 8000, result);
+      expect(out).toEqual(result);
+    }
+    expect(saves).toBe(0);
+  });
+
   test('offloads a large result to knowledge and returns a preview + pointer', async () => {
     let saved: SaveKnowledgeInput | null = null;
     const store = makeStore({
