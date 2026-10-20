@@ -24,7 +24,7 @@ import { isAdditiveSql, isReadOnlySql } from './db/sqlCheck.js';
 import type { DatabaseCapabilityMetadata, SaveKnowledgeInput, SaveSkillInput } from './types/index.js';
 
 const SERVER_NAME = 'mssql-mcp';
-const SERVER_VERSION = '1.2.0';
+const SERVER_VERSION = '1.6.0';
 
 // Configuration and logging
 const config = loadConfig();
