@@ -36,10 +36,28 @@ export function buildStaticToolDefs(
     ? 'Execute additive INSERT statements (UPDATE, DELETE, and destructive DDL are disabled)'
     : 'Execute INSERT, UPDATE, DELETE, or DDL statements';
 
+  const queryDescription =
+    'Execute a SELECT query, CTE, or read-only staging query.' +
+    (config.knowledgeEnabled
+      ? " TIP: Check 'search-knowledge' first when encountering unfamiliar domain terms, business rules, or status codes."
+      : '') +
+    (config.dynamicSkillsEnabled
+      ? " If a query pattern is frequently reused, consider saving it with 'save-skill'."
+      : '');
+
+  const metadataDescription =
+    'Retrieve database metadata (databases, tables, columns, or procedures).' +
+    (config.knowledgeEnabled
+      ? " Consult 'search-knowledge' to understand business semantics of discovered tables."
+      : '') +
+    (config.dynamicSkillsEnabled
+      ? " Use discovered column names to compose reusable tools via 'save-skill' — never guess schema."
+      : '');
+
   const tools: McpToolDef[] = [
     {
       name: 'query',
-      description: 'Execute a SELECT query and retrieve results',
+      description: queryDescription,
       inputSchema: {
         type: 'object',
         properties: {
@@ -80,11 +98,7 @@ export function buildStaticToolDefs(
     },
     {
       name: 'get-metadata',
-      description:
-        'Retrieve database metadata (databases, tables, columns, or procedures).' +
-        (config.dynamicSkillsEnabled
-          ? ' Use this to discover real table/column names before writing a skill with save-skill — never guess them.'
-          : ''),
+      description: metadataDescription,
       inputSchema: {
         type: 'object',
         properties: {
@@ -142,7 +156,7 @@ export function buildStaticToolDefs(
     tools.push({
       name: 'save-skill',
       description:
-        'Create or update a reusable SQL "skill" exposed as a new tool. Explore the schema with get-metadata first, then define the SQL and its input schema here.',
+        'Define or update a reusable parameterized SQL skill that becomes a permanent MCP tool for future sessions. Call this whenever you compose or discover a query pattern that might be needed again. (Always explore with get-metadata first to verify real table/column names).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -175,7 +189,7 @@ export function buildStaticToolDefs(
       {
         name: 'search-knowledge',
         description:
-          "Search the knowledge base (notes, gotchas, SOP excerpts) for entries relevant to a query. Call this before answering domain-specific questions this server's tools alone don't explain.",
+          "RECOMMENDED FIRST STEP for domain questions: Search the knowledge base for table meanings, business rules, gotchas, customer statuses, and formulas before querying or guessing SQL.",
         inputSchema: {
           type: 'object',
           properties: {
@@ -198,7 +212,7 @@ export function buildStaticToolDefs(
       {
         name: 'save-knowledge',
         description:
-          'Add or update a knowledge base entry. Use this whenever you learn something about this database/domain worth remembering for future sessions — table semantics, gotchas, SOP notes.',
+          'Save or update a domain note, table semantic description, gotcha, or SOP rule into the knowledge base. Call this whenever you uncover useful domain insights or business logic worth remembering for future sessions.',
         inputSchema: {
           type: 'object',
           properties: {
