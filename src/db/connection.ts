@@ -13,52 +13,16 @@ import type {
   SkillSqlValidationResult,
   KnowledgeRow,
   SaveKnowledgeInput,
+  DatabaseCapabilityMetadata,
 } from '../types/index.js';
-
-/**
- * Statements/verbs that mutate data, schema, permissions, or server state,
- * or that let the current login escape SQL entirely (xp_cmdshell). This is a
- * best-effort static blocklist, NOT a sound classifier of arbitrary T-SQL —
- * see the warning on checkProcedureReadOnly below.
- */
-const DIRECT_MUTATION_KEYWORDS =
-  /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|MERGE|GRANT|REVOKE|DENY|BACKUP|RESTORE|RECONFIGURE|DBCC|IDENTITY_INSERT|sp_rename|sp_configure|xp_cmdshell)\b/i;
-
-/**
- * Detects `SELECT ... INTO <table>` — creates a table as a side effect, so
- * it counts as a mutation even though the statement starts with SELECT. Kept
- * as its own simple, linear pattern (rather than folded into the alternation
- * above) to avoid the backtracking blowup a `.*` inside an alternation can
- * cause on a long, adversarial procedure body.
- */
-const SELECT_INTO_PATTERN = /\bSELECT\b[^;]*?\bINTO\b/i;
-
-/** Matches an `EXEC`/`EXECUTE` call site, up to (not including) its callee. */
-const EXEC_PREFIX_PATTERN = /\bEXEC(?:UTE)?\s+(?:@\w+\s*=\s*)?/gi;
-
-/**
- * Matches the callee right after an EXEC_PREFIX_PATTERN match: a possibly
- * schema/database-qualified, possibly bracketed procedure name. Also matches
- * the tell-tale start of a dynamic call (`(`, `@variable`, or
- * `sp_executesql`) so those can be flagged as unverifiable rather than
- * mistaken for a real procedure name.
- */
-const CALLEE_TOKEN_PATTERN = /^(\(|@\w+|sp_executesql\b|(?:\[[^\]]+\]|\w+)(?:\.(?:\[[^\]]+\]|\w+)){0,2})/i;
-
-/**
- * Strips `--` line comments, `/* *\/` block comments, and quoted string
- * literals from a T-SQL body before it's scanned for mutation keywords or
- * EXEC call sites. Without this, a keyword split across a comment (e.g.
- * `DRO/*x*\/P TABLE t`) would parse as a real statement in SQL Server but
- * dodge the regex — this closes that specific evasion. It's still a
- * heuristic: see the warning on checkProcedureReadOnly.
- */
-function stripSqlNoise(sqlText: string): string {
-  return sqlText
-    .replace(/--[^\r\n]*/g, ' ')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/'(?:[^']|'')*'/g, "''");
-}
+import {
+  CALLEE_TOKEN_PATTERN,
+  EXEC_PREFIX_PATTERN,
+  hasPermanentMutation,
+  isDestructiveSql,
+  isReadOnlySql,
+  stripSqlNoise,
+} from './sqlCheck.js';
 
 /**
  * Infer a SQL Server type for a stored procedure output parameter from its
@@ -88,6 +52,7 @@ export class SqlServerConnectionManager {
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   private readonly RECONNECT_DELAY = 1000;
+  private cachedCapability?: DatabaseCapabilityMetadata;
 
   constructor(config: SqlServerConfig, logger: Logger) {
     this.config = config;
@@ -333,7 +298,7 @@ export class SqlServerConnectionManager {
 
     const cleanDefinition = stripSqlNoise(definition);
 
-    if (DIRECT_MUTATION_KEYWORDS.test(cleanDefinition) || SELECT_INTO_PATTERN.test(cleanDefinition)) {
+    if (hasPermanentMutation(cleanDefinition)) {
       return { readOnly: false, reason: `'${procedureName}' contains a direct mutation statement` };
     }
 
@@ -440,6 +405,7 @@ export class SqlServerConnectionManager {
    * Close the connection pool
    */
   async disconnect(): Promise<void> {
+    this.cachedCapability = undefined;
     if (this.pool) {
       try {
         await this.pool.close();
@@ -482,12 +448,150 @@ export class SqlServerConnectionManager {
   }
 
   /**
+   * Reads database updateability, user mutation permissions, and stored procedure
+   * metadata to evaluate database capabilities before deciding tool annotations.
+   */
+  async getDatabaseCapabilityMetadata(): Promise<DatabaseCapabilityMetadata> {
+    if (this.cachedCapability) {
+      return this.cachedCapability;
+    }
+
+    await this.ensureConnected();
+
+    // 1. If neither mutations nor additive are allowed, the server operates strictly in read-only mode
+    if (!this.config.allowMutations && !this.config.allowAdditive) {
+      this.cachedCapability = {
+        isReadOnly: true,
+        canMutate: false,
+        canInsert: false,
+        canDelete: false,
+        canDrop: false,
+        hasProcedures: true,
+        allProceduresReadOnly: true,
+        anyProcedureDestructive: false,
+      };
+      return this.cachedCapability;
+    }
+
+    try {
+      // 2. Query database updateability and user permissions
+      const permResult = await this.pool!.request().query(`
+        SELECT 
+          CAST(DATABASEPROPERTYEX(DB_NAME(), 'Updateability') AS VARCHAR(20)) AS updateability,
+          HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'INSERT') AS can_insert,
+          HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'UPDATE') AS can_update,
+          HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'DELETE') AS can_delete,
+          HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'CREATE TABLE') AS can_create_table,
+          HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'ALTER') AS can_alter,
+          HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'DROP') AS can_drop
+      `);
+
+      const permRow = permResult.recordset?.[0] as {
+        updateability?: string;
+        can_insert?: number;
+        can_update?: number;
+        can_delete?: number;
+        can_create_table?: number;
+        can_alter?: number;
+        can_drop?: number;
+      } | undefined;
+
+      const isDbReadOnly = permRow?.updateability === 'READ_ONLY';
+      const canInsert = permRow?.can_insert === 1;
+      const canUpdate = permRow?.can_update === 1;
+      const canDelete = permRow?.can_delete === 1;
+      const canCreateTable = permRow?.can_create_table === 1;
+      const canAlter = permRow?.can_alter === 1;
+      const canDrop = permRow?.can_drop === 1;
+
+      // In additive mode (allowAdditive = true, allowMutations = false):
+      // Only INSERT is active; destructive operations and UPDATE are suppressed.
+      if (!this.config.allowMutations && this.config.allowAdditive) {
+        const canDoAdditive = !isDbReadOnly && canInsert;
+        this.cachedCapability = {
+          isReadOnly: !canDoAdditive,
+          canMutate: false,
+          canInsert: canDoAdditive,
+          canDelete: false,
+          canDrop: false,
+          hasProcedures: true,
+          allProceduresReadOnly: true,
+          anyProcedureDestructive: false,
+        };
+        return this.cachedCapability;
+      }
+
+      const hasAnyMutationPerm = canInsert || canUpdate || canDelete || canCreateTable || canAlter || canDrop;
+      const isReadOnly = isDbReadOnly || !hasAnyMutationPerm;
+
+      // 3. Query stored procedures to check read-only / destructive presence
+      let hasProcedures = false;
+      let allProceduresReadOnly = true;
+      let anyProcedureDestructive = false;
+
+      try {
+        const procResult = await this.pool!.request().query(`
+          SELECT 
+            p.name,
+            m.definition
+          FROM sys.procedures p
+          LEFT JOIN sys.sql_modules m ON p.object_id = m.object_id
+          WHERE p.is_ms_shipped = 0
+        `);
+
+        const procs = procResult.recordset as { name: string; definition: string | null }[] | undefined;
+        if (procs && procs.length > 0) {
+          hasProcedures = true;
+          for (const proc of procs) {
+            if (!proc.definition) {
+              allProceduresReadOnly = false;
+              continue;
+            }
+            if (!isReadOnlySql(proc.definition)) {
+              allProceduresReadOnly = false;
+            }
+            if (isDestructiveSql(proc.definition)) {
+              anyProcedureDestructive = true;
+            }
+          }
+        }
+      } catch (procErr) {
+        this.logger.warn('Failed to query procedure definitions for capability metadata', procErr);
+        allProceduresReadOnly = false;
+      }
+
+      this.cachedCapability = {
+        isReadOnly,
+        canMutate: !isReadOnly,
+        canDelete,
+        canDrop,
+        hasProcedures,
+        allProceduresReadOnly,
+        anyProcedureDestructive,
+      };
+      return this.cachedCapability;
+    } catch (err) {
+      this.logger.warn('Failed to query database permissions, falling back to allowMutations config', err);
+      this.cachedCapability = {
+        isReadOnly: !this.config.allowMutations,
+        canMutate: this.config.allowMutations,
+        canDelete: false,
+        canDrop: false,
+        hasProcedures: false,
+        allProceduresReadOnly: !this.config.allowMutations,
+        anyProcedureDestructive: false,
+      };
+      return this.cachedCapability;
+    }
+  }
+
+  /**
    * List active dynamic skills for tools/list.
    */
   async listSkills(): Promise<SkillRow[]> {
     await this.ensureConnected();
     const result = await this.pool!.request().query(
-      `SELECT tool_name, description, keywords, generated_prompt FROM ${this.skillsTable} WHERE is_active = 1`,
+      `SELECT tool_name, description, keywords, generated_prompt, generated_sql FROM ${this.skillsTable} WHERE is_active = 1`,
     );
     return result.recordset as SkillRow[];
   }

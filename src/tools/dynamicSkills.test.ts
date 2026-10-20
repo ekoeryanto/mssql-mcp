@@ -48,6 +48,73 @@ describe('toMcpTool', () => {
     }
   });
 
+  test('sets readOnlyHint: true for read-only SQL', () => {
+    const row: SkillRow = {
+      tool_name: 'cek-tagihan',
+      description: 'Cek tagihan pelanggan',
+      keywords: null,
+      generated_prompt: '{"type":"object","properties":{}}',
+      generated_sql: 'SELECT * FROM tb_tagihan WHERE nomor = @nomor',
+    };
+    const result = toMcpTool(row);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.tool.annotations?.readOnlyHint).toBe(true);
+      expect(result.tool.annotations?.destructiveHint).toBe(false);
+      expect(result.tool.annotations?.openWorldHint).toBe(false);
+    }
+  });
+
+  test('sets readOnlyHint: false and destructiveHint: true for destructive SQL', () => {
+    const row: SkillRow = {
+      tool_name: 'hapus-tagihan',
+      description: 'Hapus tagihan pelanggan',
+      keywords: null,
+      generated_prompt: '{"type":"object","properties":{}}',
+      generated_sql: 'DELETE FROM tb_tagihan WHERE nomor = @nomor',
+    };
+    const result = toMcpTool(row);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.tool.annotations?.readOnlyHint).toBe(false);
+      expect(result.tool.annotations?.destructiveHint).toBe(true);
+      expect(result.tool.annotations?.openWorldHint).toBe(false);
+    }
+  });
+
+  test('sets readOnlyHint: false and destructiveHint: false for additive SQL', () => {
+    const row: SkillRow = {
+      tool_name: 'tambah-tagihan',
+      description: 'Tambah tagihan pelanggan',
+      keywords: null,
+      generated_prompt: '{"type":"object","properties":{}}',
+      generated_sql: 'INSERT INTO tb_tagihan (nomor, total) VALUES (@nomor, @total)',
+    };
+    const result = toMcpTool(row);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.tool.annotations?.readOnlyHint).toBe(false);
+      expect(result.tool.annotations?.destructiveHint).toBe(false);
+      expect(result.tool.annotations?.openWorldHint).toBe(false);
+    }
+  });
+
+  test('defaults to readOnlyHint: true when generated_sql is not provided', () => {
+    const row: SkillRow = {
+      tool_name: 'cek-tagihan',
+      description: 'Cek tagihan pelanggan',
+      keywords: null,
+      generated_prompt: '{"type":"object","properties":{}}',
+    };
+    const result = toMcpTool(row);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.tool.annotations?.readOnlyHint).toBe(true);
+      expect(result.tool.annotations?.destructiveHint).toBe(false);
+      expect(result.tool.annotations?.openWorldHint).toBe(false);
+    }
+  });
+
   test('flags a row with invalid generated_prompt', () => {
     const row: SkillRow = {
       tool_name: 'broken',

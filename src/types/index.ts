@@ -2,6 +2,10 @@
  * Type definitions for MCP SQL Server
  */
 
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+
+export type { ToolAnnotations };
+
 export interface SqlServerConfig {
   server: string;
   port: number;
@@ -11,6 +15,7 @@ export interface SqlServerConfig {
   encrypt: boolean;
   trustServerCertificate: boolean;
   allowMutations: boolean;
+  allowAdditive?: boolean;
   skillsTable: string;
   knowledgeTable: string;
   connectionPoolMin?: number;
@@ -109,6 +114,7 @@ export interface SkillRow {
   description: string;
   keywords: string | null;
   generated_prompt: string;
+  generated_sql?: string;
 }
 
 export interface SkillDefinition {
@@ -126,6 +132,17 @@ export interface SaveSkillInput {
 
 export type SkillSqlValidationResult = { valid: true } | { valid: false; error: string };
 
+export interface DatabaseCapabilityMetadata {
+  isReadOnly: boolean;
+  canMutate: boolean;
+  canInsert?: boolean;
+  canDelete: boolean;
+  canDrop: boolean;
+  hasProcedures: boolean;
+  allProceduresReadOnly: boolean;
+  anyProcedureDestructive: boolean;
+}
+
 export interface SkillsStore {
   listSkills(): Promise<SkillRow[]>;
   getSkillDefinition(toolName: string): Promise<SkillDefinition | null>;
@@ -138,6 +155,7 @@ export interface SkillsStore {
     dummyParams: Record<string, unknown>,
   ): Promise<SkillSqlValidationResult>;
   upsertSkill(skill: SaveSkillInput): Promise<void>;
+  getDatabaseCapabilityMetadata?(): Promise<DatabaseCapabilityMetadata>;
 }
 
 export interface JsonSchemaProperty {
@@ -157,6 +175,7 @@ export interface McpToolDef {
   name: string;
   description: string;
   inputSchema: JsonSchemaObject;
+  annotations?: ToolAnnotations;
 }
 
 export interface KnowledgeRow {

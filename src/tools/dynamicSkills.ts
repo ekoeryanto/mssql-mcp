@@ -7,6 +7,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import AjvModule, { type ErrorObject, type ValidateFunction } from 'ajv';
 import { buildDummyArgs, parseSkillPrompt, validatePromptDescriptions } from './skillSchema.js';
+import { isDestructiveSql, isReadOnlySql } from '../db/sqlCheck.js';
 import type {
   JsonSchemaObject,
   Logger,
@@ -14,6 +15,7 @@ import type {
   SaveSkillInput,
   SkillRow,
   SkillsStore,
+  ToolAnnotations,
 } from '../types/index.js';
 
 // ajv v8 ships as CJS; under nodenext/esModuleInterop the default export
@@ -62,7 +64,22 @@ export function toMcpTool(row: SkillRow): { ok: true; tool: McpToolDef } | { ok:
     return { ok: false, error: `generated_prompt is not a valid JSON Schema: ${compiled.error}` };
   }
   const description = row.keywords ? `${row.description} (Keywords: ${row.keywords})` : row.description;
-  return { ok: true, tool: { name: row.tool_name, description, inputSchema: parsed.schema } };
+  const isReadOnly = row.generated_sql !== undefined ? isReadOnlySql(row.generated_sql) : true;
+  const isDestructive = row.generated_sql !== undefined ? isDestructiveSql(row.generated_sql) : false;
+  const annotations: ToolAnnotations = {
+    readOnlyHint: isReadOnly,
+    destructiveHint: isDestructive,
+    openWorldHint: false,
+  };
+  return {
+    ok: true,
+    tool: {
+      name: row.tool_name,
+      description,
+      inputSchema: parsed.schema,
+      annotations,
+    },
+  };
 }
 
 export async function loadDynamicTools(
