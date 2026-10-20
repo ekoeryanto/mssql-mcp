@@ -19,7 +19,9 @@ import ToolHandlers from './tools/handlers.js';
 import { callDynamicSkill, loadDynamicTools, saveSkill } from './tools/dynamicSkills.js';
 import { saveKnowledgeTool, searchKnowledgeTool } from './tools/knowledgeBase.js';
 import { maybeAutosaveLargeResult } from './tools/autosaveKnowledge.js';
-import type { McpToolDef, SaveKnowledgeInput, SaveSkillInput } from './types/index.js';
+import { buildStaticToolDefs } from './tools/staticTools.js';
+import { isAdditiveSql, isReadOnlySql } from './db/sqlCheck.js';
+import type { DatabaseCapabilityMetadata, SaveKnowledgeInput, SaveSkillInput } from './types/index.js';
 
 const SERVER_NAME = 'mssql-mcp';
 const SERVER_VERSION = '1.2.0';
@@ -35,7 +37,10 @@ let handlers: ToolHandlers | null = null;
 async function getStore(): Promise<{ db: SqlServerConnectionManager; handlers: ToolHandlers }> {
   if (!db || !handlers) {
     db = new SqlServerConnectionManager(config.sqlServer, logger);
-    handlers = new ToolHandlers(db, logger, config.sqlServer.allowMutations);
+    handlers = new ToolHandlers(db, logger, {
+      allowMutations: config.sqlServer.allowMutations,
+      allowAdditive: config.sqlServer.allowAdditive ?? false,
+    });
     await db.connect();
   }
   return { db, handlers };
@@ -89,162 +94,22 @@ const dynamicSkillsEnabled = config.skillsEnabled;
 // "Tool not found". Independent of dynamicSkillsEnabled.
 const knowledgeEnabled = config.knowledgeEnabled;
 
-// AUTOSAVE_TO_KNOWLEDGE=true offloads any tool result whose text exceeds
-// AUTOSAVE_THRESHOLD_CHARS into tb_mcp_knowledge, replacing it with a
-// preview + pointer. Only takes effect when knowledgeEnabled is also true
-// (it reuses the same store), and is off by default.
+// AUTOSAVE_TO_KNOWLEDGE=true saves any tool result whose text exceeds
+// AUTOSAVE_THRESHOLD_CHARS into tb_mcp_knowledge silently in the background,
+// preserving the full response payload intact. Only takes effect when
+// knowledgeEnabled is also true (it reuses the same store), and is off by default.
 const autosaveEnabled = config.autosaveToKnowledge && knowledgeEnabled;
 const autosaveThresholdChars = config.autosaveThresholdChars;
 
-const staticToolDefs: McpToolDef[] = [
-  {
-    name: 'query',
-    description: 'Execute a SELECT query and retrieve results',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'SQL SELECT query to execute' },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'execute-statement',
-    description: 'Execute INSERT, UPDATE, DELETE, or DDL statements',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        statement: {
-          type: 'string',
-          description: 'SQL statement to execute (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP)',
-        },
-        params: {
-          type: 'object',
-          description: 'Optional parameters for parameterized queries',
-        },
-      },
-      required: ['statement'],
-    },
-  },
-  {
-    name: 'get-metadata',
-    description:
-      'Retrieve database metadata (databases, tables, columns, or procedures).' +
-      (dynamicSkillsEnabled
-        ? ' Use this to discover real table/column names before writing a skill with save-skill — never guess them.'
-        : ''),
-    inputSchema: {
-      type: 'object',
-      properties: {
-        type: {
-          type: 'string',
-          enum: ['databases', 'tables', 'columns', 'procedures'],
-          description: 'Type of metadata to retrieve',
-        },
-        filter: {
-          type: 'string',
-          description: 'Optional filter (e.g., table name for columns query)',
-        },
-      },
-      required: ['type'],
-    },
-  },
-  {
-    name: 'execute-procedure',
-    description: 'Execute a stored procedure with optional input/output parameters',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Name of the stored procedure' },
-        params: {
-          type: 'object',
-          description: 'Optional parameters object with structure: { paramName: { value: any, output?: boolean } }',
-        },
-      },
-      required: ['name'],
-    },
-  },
-  {
-    name: 'get-status',
-    description: 'Get current connection status and pool information',
-    inputSchema: { type: 'object', properties: {} },
-  },
-];
-
-const saveSkillToolDef: McpToolDef = {
-  name: 'save-skill',
-  description:
-    'Create or update a reusable SQL "skill" exposed as a new tool. Explore the schema with get-metadata first, then define the SQL and its input schema here.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      tool_name: { type: 'string', description: 'Unique snake/kebab-case tool identifier' },
-      description: { type: 'string', description: 'What this skill does, shown when browsing tools/list' },
-      keywords: { type: 'string', description: 'Comma-separated keywords to help discovery' },
-      generated_prompt: {
-        type: 'string',
-        description:
-          'JSON Schema (as a string) describing this tool\'s input arguments. Every property MUST have its own non-empty "description" — this is what a future AI session reads to know what value to supply, so write it as if explaining the parameter to someone who has never seen this skill before.',
-      },
-      generated_sql: {
-        type: 'string',
-        description: "Parameterized SQL using @paramName placeholders matching generated_prompt's properties",
-      },
-    },
-    required: ['tool_name', 'description', 'generated_prompt', 'generated_sql'],
-  },
+const staticToolsConfig = {
+  dynamicSkillsEnabled,
+  knowledgeEnabled,
+  allowMutations: config.sqlServer.allowMutations,
+  allowAdditive: config.sqlServer.allowAdditive ?? false,
 };
 
-if (dynamicSkillsEnabled) {
-  staticToolDefs.push(saveSkillToolDef);
-}
-
-const searchKnowledgeToolDef: McpToolDef = {
-  name: 'search-knowledge',
-  description:
-    "Search the knowledge base (notes, gotchas, SOP excerpts) for entries relevant to a query. Call this before answering domain-specific questions this server's tools alone don't explain.",
-  inputSchema: {
-    type: 'object',
-    properties: {
-      query: {
-        type: 'string',
-        description: 'Free-text search term, matched against title/content/keywords. Omit to list the most recently updated entries.',
-      },
-      limit: {
-        type: 'integer',
-        description: 'Max entries to return (1-50, default 10).',
-      },
-    },
-  },
-};
-
-const saveKnowledgeToolDef: McpToolDef = {
-  name: 'save-knowledge',
-  description:
-    'Add or update a knowledge base entry. Use this whenever you learn something about this database/domain worth remembering for future sessions — table semantics, gotchas, SOP notes.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      title: {
-        type: 'string',
-        minLength: 1,
-        description: 'Unique title identifying this entry. Saving with an existing title overwrites its content.',
-      },
-      content: { type: 'string', minLength: 1, description: 'The note/fact/doc excerpt itself.' },
-      keywords: {
-        type: 'string',
-        description: 'Optional comma-separated keywords to help future searches find this entry.',
-      },
-    },
-    required: ['title', 'content'],
-  },
-};
-
-if (knowledgeEnabled) {
-  staticToolDefs.push(searchKnowledgeToolDef, saveKnowledgeToolDef);
-}
-
-const STATIC_TOOL_NAMES = new Set(staticToolDefs.map((t) => t.name));
+const defaultStaticToolDefs = buildStaticToolDefs(staticToolsConfig);
+const STATIC_TOOL_NAMES = new Set(defaultStaticToolDefs.map((t) => t.name));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const Ajv = (AjvModule as any).default || AjvModule;
@@ -253,7 +118,7 @@ const ajv = new Ajv({ allErrors: true, strict: false });
 // Static tool schemas are fixed at build time (unlike tb_mcp_skills rows),
 // so compiling them eagerly here can't throw at request time the way
 // dynamic-skill schemas can.
-const staticToolValidators = new Map(staticToolDefs.map((t) => [t.name, ajv.compile(t.inputSchema)]));
+const staticToolValidators = new Map(defaultStaticToolDefs.map((t) => [t.name, ajv.compile(t.inputSchema)]));
 
 function validateStaticArgs(name: string, args: unknown): { ok: true } | { ok: false; error: string } {
   const validate = staticToolValidators.get(name);
@@ -304,12 +169,21 @@ function createMcpServer(): Server {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    if (!dynamicSkillsEnabled) {
-      return { tools: staticToolDefs };
-    }
     const store = await getStoreOrNull();
+    let capability: DatabaseCapabilityMetadata | undefined;
+    if (store && typeof store.getDatabaseCapabilityMetadata === 'function') {
+      try {
+        capability = await store.getDatabaseCapabilityMetadata();
+      } catch (err) {
+        logger.warn('Failed to retrieve database capability metadata for tools/list', err);
+      }
+    }
+    const staticTools = buildStaticToolDefs(staticToolsConfig, capability);
+    if (!dynamicSkillsEnabled) {
+      return { tools: staticTools };
+    }
     const dynamicTools = store ? await loadDynamicTools(store, logger, STATIC_TOOL_NAMES) : [];
-    return { tools: [...staticToolDefs, ...dynamicTools] };
+    return { tools: [...staticTools, ...dynamicTools] };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -559,10 +433,24 @@ function startHttpServer(): void {
           }
 
           if (!config.sqlServer.allowMutations) {
-            const mutationRegex = /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE)\b/i;
-            if (mutationRegex.test(data.query)) {
+            if (config.sqlServer.allowAdditive) {
+              if (!isAdditiveSql(data.query)) {
+                res.writeHead(403);
+                res.end(
+                  JSON.stringify({
+                    error:
+                      'UPDATE and destructive mutations are disabled in additive mode. Only read-only queries and INSERT statements are permitted.',
+                  }),
+                );
+                return;
+              }
+            } else if (!isReadOnlySql(data.query)) {
               res.writeHead(403);
-              res.end(JSON.stringify({ error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.' }));
+              res.end(
+                JSON.stringify({
+                  error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true or SQLSERVER_ALLOW_ADDITIVE=true to enable.',
+                }),
+              );
               return;
             }
           }

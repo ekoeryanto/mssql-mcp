@@ -4,39 +4,73 @@
 
 import type { QueryResult, ExecuteResult, MetadataResult, ProcedureResult, Logger } from '../types/index.js';
 import type SqlServerConnectionManager from '../db/connection.js';
+import { ALTER_PERMANENT_PATTERN, isAdditiveSql, isReadOnlySql, stripSqlNoise, UPDATE_PERMANENT_PATTERN } from '../db/sqlCheck.js';
 
-const MUTATION_KEYWORDS =
-  /\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE|MERGE|GRANT|REVOKE|DENY|BACKUP|RESTORE|RECONFIGURE|DBCC|IDENTITY_INSERT|INTO|sp_rename|sp_configure|xp_cmdshell)\b/i;
+export interface MutationOptions {
+  allowMutations: boolean;
+  allowAdditive?: boolean;
+}
 
 export class ToolHandlers {
   private readonly db: SqlServerConnectionManager;
   private readonly logger: Logger;
   private readonly allowMutations: boolean;
+  private readonly allowAdditive: boolean;
 
-  constructor(db: SqlServerConnectionManager, logger: Logger, allowMutations: boolean) {
+  constructor(
+    db: SqlServerConnectionManager,
+    logger: Logger,
+    optionsOrAllowMutations: boolean | MutationOptions,
+    allowAdditive = false,
+  ) {
     this.db = db;
     this.logger = logger;
-    this.allowMutations = allowMutations;
+    if (typeof optionsOrAllowMutations === 'boolean') {
+      this.allowMutations = optionsOrAllowMutations;
+      this.allowAdditive = allowAdditive;
+    } else {
+      this.allowMutations = optionsOrAllowMutations.allowMutations;
+      this.allowAdditive = optionsOrAllowMutations.allowAdditive ?? false;
+    }
   }
 
   /**
-   * Execute a SELECT query
+   * Execute a query (SELECT, CTE, or read-only batch with temp tables)
    */
   async handleQuery(input: { query: string }): Promise<QueryResult> {
     try {
       const { query } = input;
 
-      if (!query.trim().toUpperCase().startsWith('SELECT')) {
+      if (!query || typeof query !== 'string' || query.trim().length === 0) {
         return {
           success: false,
-          error: 'Only SELECT queries are supported. Use execute-statement for INSERT, UPDATE, DELETE.',
+          error: 'Query must be a non-empty string.',
         };
       }
 
-      if (!this.allowMutations && MUTATION_KEYWORDS.test(query)) {
+      // Check whether query performs permanent mutations to user data/schema
+      if (!isReadOnlySql(query)) {
+        if (!this.allowMutations && !this.allowAdditive) {
+          return {
+            success: false,
+            error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.',
+          };
+        }
+        if (!this.allowMutations && this.allowAdditive) {
+          if (!isAdditiveSql(query)) {
+            return {
+              success: false,
+              error: 'UPDATE and destructive statements are disabled in additive mode. Only read-only queries are supported by query.',
+            };
+          }
+          return {
+            success: false,
+            error: 'Only read-only queries are supported by query. Use execute-statement for INSERT statements.',
+          };
+        }
         return {
           success: false,
-          error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.',
+          error: 'Only read-only queries (SELECT, WITH, temporary table queries) are supported by query. Use execute-statement for INSERT, UPDATE, DELETE.',
         };
       }
 
@@ -58,22 +92,53 @@ export class ToolHandlers {
   }
 
   /**
-   * Execute INSERT, UPDATE, DELETE statements
+   * Execute DML or DDL statements
    */
   async handleExecute(input: { statement: string; params?: Record<string, unknown> }): Promise<ExecuteResult> {
-    if (!this.allowMutations) {
+    const { statement, params } = input;
+
+    if (!statement || typeof statement !== 'string' || statement.trim().length === 0) {
       return {
         success: false,
-        error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.',
+        error: 'Statement must be a non-empty string.',
       };
     }
 
-    try {
-      const { statement, params } = input;
+    // If full mutations are disabled, check read-only / additive permissions
+    if (!this.allowMutations) {
+      if (this.allowAdditive) {
+        if (!isAdditiveSql(statement)) {
+          const clean = stripSqlNoise(statement).trim();
+          if (UPDATE_PERMANENT_PATTERN.test(clean)) {
+            return {
+              success: false,
+              error: 'UPDATE statements are not allowed in additive mode. Only additive operations (INSERT) are permitted.',
+            };
+          }
+          if (ALTER_PERMANENT_PATTERN.test(clean)) {
+            return {
+              success: false,
+              error: 'ALTER statements are not allowed in additive mode. Only additive operations (INSERT) are permitted.',
+            };
+          }
+          return {
+            success: false,
+            error: 'Mutations are restricted to additive operations (INSERT). UPDATE, DELETE, DROP, TRUNCATE, and ALTER are disabled.',
+          };
+        }
+      } else if (!isReadOnlySql(statement)) {
+        return {
+          success: false,
+          error: 'Mutations are disabled. Set SQLSERVER_ALLOW_MUTATIONS=true to enable.',
+        };
+      }
+    }
 
-      const validStatements = ['INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP'];
-      const trimmedStatement = statement.trim().toUpperCase();
-      if (!validStatements.some((s) => trimmedStatement.startsWith(s))) {
+    try {
+      const cleanStatement = stripSqlNoise(statement).trim();
+      const validStatements = ['INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'TRUNCATE', 'MERGE', 'SET', 'DECLARE'];
+      const upperClean = cleanStatement.toUpperCase();
+      if (!validStatements.some((s) => upperClean.startsWith(s))) {
         return {
           success: false,
           error: `Statement must start with one of: ${validStatements.join(', ')}`,
