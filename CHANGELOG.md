@@ -1,5 +1,19 @@
 # Changelog
 
+# [1.6.0](https://github.com/ekoeryanto/mssql-mcp/compare/1.5.0...1.6.0) (2026-10-20)
+
+### Bug Fixes
+
+* align SERVER_VERSION with release version ([3f51adc](https://github.com/ekoeryanto/mssql-mcp/commit/3f51adcd2ff345f7b463bda0b5ed7fc674100c37))
+* **knowledge:** silently autosave without truncating tool response payload ([40b7b5b](https://github.com/ekoeryanto/mssql-mcp/commit/40b7b5bfa9a5cca9b1cbae85f1ff20c1889cf4ed))
+* never autosave search-knowledge/save-knowledge results ([88ccd0c](https://github.com/ekoeryanto/mssql-mcp/commit/88ccd0c81501da18eab45e974b21f1154c9fcde3))
+
+### Features
+
+* **mcp:** add dynamic capability discovery and MCP tool hint annotations ([f74ca25](https://github.com/ekoeryanto/mssql-mcp/commit/f74ca25bf7023f8c9ba673d0558ff99aa400fe27))
+* **safety:** add additive mode allowing INSERT while disallowing UPDATE, ALTER, and destructive mutations ([06c8b8e](https://github.com/ekoeryanto/mssql-mcp/commit/06c8b8e00a2ac14e0f5f03da0914a86a499da930))
+* **sql:** add SQL analysis supporting temp tables, CTEs, and additive checks ([fc20731](https://github.com/ekoeryanto/mssql-mcp/commit/fc2073170315b5b2c24161d9eb361dfc787a92d6))
+
 # [1.5.0](https://github.com/ekoeryanto/mssql-mcp/compare/1.4.1...1.5.0) (2026-09-07)
 
 ### Bug Fixes
