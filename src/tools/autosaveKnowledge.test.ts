@@ -44,7 +44,7 @@ describe('maybeAutosaveLargeResult', () => {
     expect(saves).toBe(0);
   });
 
-  test('offloads a large result to knowledge and returns a preview + pointer', async () => {
+  test('silently saves a large result to knowledge without cutting the response', async () => {
     let saved: SaveKnowledgeInput | null = null;
     const store = makeStore({
       saveKnowledge: async (entry) => {
@@ -60,11 +60,7 @@ describe('maybeAutosaveLargeResult', () => {
     expect(saved!.title).toStartWith('autosave:query:');
     expect(saved!.keywords).toBe('autosave, query');
 
-    expect(out.isError).toBeUndefined();
-    const text = out.content[0]!.type === 'text' ? out.content[0]!.text : '';
-    expect(text.length).toBeLessThan(bigText.length);
-    expect(text).toContain(saved!.title);
-    expect(text).toContain('search-knowledge');
+    expect(out).toEqual(result);
   });
 
   test('falls back to the original result when saveKnowledge fails', async () => {
