@@ -42,8 +42,13 @@ Execute SELECT queries and retrieve results.
 | data | object[] | Array of result rows |
 | error | string | Error message if `success` is false |
 
+**Annotations:**
+* `readOnlyHint`: `true`
+* `destructiveHint`: `false`
+* `openWorldHint`: `false`
+
 **Constraints:**
-- Only SELECT queries are allowed
+- Read-only queries only: `SELECT`, CTE (`WITH ... SELECT`), and `#temp` / `@table` staging queries
 - Query must be a non-empty string
 - Results are limited by SQL Server and connection timeout settings
 
@@ -99,13 +104,23 @@ Execute INSERT, UPDATE, DELETE, CREATE, ALTER, or DROP statements.
 | message | string | Success message |
 | error | string | Error message if `success` is false |
 
+**Annotations (Resolved Dynamically):**
+* `readOnlyHint`: `true` in Read-Only mode; `false` in Additive Mode or Full Mutations mode.
+* `destructiveHint`: `false` in Read-Only or Additive Mode; set to `true` only for destructive queries (`DELETE`, `DROP`, `TRUNCATE`).
+* `openWorldHint`: `false`.
+
+**Safety Modes:**
+* **Read-Only Mode** (`SQLSERVER_ALLOW_MUTATIONS=false`, default): Only temporary table creation/staging (`#temp`) and session commands (`SET`, `DECLARE`) are permitted. Permanent table mutations are blocked.
+* **Additive Mode** (`SQLSERVER_ALLOW_ADDITIVE=true`): **`INSERT`** statements into permanent tables are allowed. **`UPDATE`**, **`ALTER`**, and destructive operations (**`DELETE`**, **`DROP`**, **`TRUNCATE`**) are strictly blocked.
+* **Full Mutations** (`SQLSERVER_ALLOW_MUTATIONS=true`): All DML and DDL statements are permitted.
+
 **Supported Statement Types:**
 - INSERT
-- UPDATE
-- DELETE
-- CREATE
-- ALTER
-- DROP
+- UPDATE (Full mutations only)
+- DELETE (Full mutations only)
+- CREATE (Temporary tables in all modes, permanent in full mutations)
+- ALTER (Full mutations only)
+- DROP (Temporary tables in all modes, permanent in full mutations)
 
 **Parameters:**
 Parameters should be provided as a key-value object:

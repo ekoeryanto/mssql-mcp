@@ -4,15 +4,18 @@ A flexible and stable Model Context Protocol (MCP) server for Microsoft SQL Serv
 
 ## Features
 
-- ✅ **Query Execution**: Execute SELECT queries and retrieve results
+- ✅ **Query Execution**: Execute SELECT queries, CTEs (`WITH ... SELECT`), and temporary table staging (`#temp`, `@table`) without false positives
 - ✅ **Statement Execution**: Execute INSERT, UPDATE, DELETE, and DDL statements
-- ✅ **Stored Procedures**: Execute procedures with input/output parameters
+- ✅ **Three-Tier Safety Modes**: Granular control via Read-Only, Additive Mode (append-only), or Full Mutations
+- ✅ **MCP Tool Annotations**: Dynamic `readOnlyHint`, `destructiveHint`, and `openWorldHint` annotations to eliminate repetitive permission prompts in Gemini and modern LLM clients
+- ✅ **Stored Procedures**: Execute procedures with input/output parameters and auto-detected read-only safety
 - ✅ **Metadata Retrieval**: List databases, tables, columns, and procedures
 - ✅ **Connection Pooling**: Efficient connection management with configurable pool
 - ✅ **Retry Logic**: Automatic reconnection with exponential backoff
 - ✅ **Error Handling**: Comprehensive error handling and logging
 - ✅ **Docker Ready**: Includes Dockerfile and docker-compose configuration
-- ✅ **Autosave to Knowledge**: Optionally offloads large, token-heavy tool results into the knowledge base automatically
+- ✅ **Autosave to Knowledge**: Optionally offloads large, token-heavy tool results silently into the knowledge base
+- ✅ **Dual Transport**: Local `stdio` transport or remote modern **Streamable HTTP** transport (`POST /mcp`)
 - ✅ **Type Safe**: Full TypeScript support with strict type checking
 - ✅ **Production Ready**: Suitable for public repositories and enterprise use
 
@@ -121,6 +124,10 @@ SQLSERVER_PASSWORD=YourStrong@Password
 SQLSERVER_ENCRYPT=false
 SQLSERVER_TRUST_SERVER_CERTIFICATE=true
 
+# Mutation Safety Modes (see "Safety Modes" below)
+SQLSERVER_ALLOW_MUTATIONS=false
+# SQLSERVER_ALLOW_ADDITIVE=true  # Enable append-only (INSERT allowed; UPDATE, ALTER, and destructive DDL blocked)
+
 # Dynamic Skills feature (optional, off by default — see docs/DYNAMIC_SKILLS.md)
 # SKILLS_ENABLED=false
 # SKILLS_TABLE=tb_mcp_skills
@@ -140,9 +147,12 @@ SQLSERVER_CONNECTION_POOL_MIN=2
 SQLSERVER_CONNECTION_POOL_MAX=10
 SQLSERVER_REQUEST_TIMEOUT=30000
 
-# Server Configuration
+# Server Configuration & Transports
 MCP_SERVER_NAME=mssql-mcp
 LOG_LEVEL=info  # debug, info, warn, error
+# MCP_SERVER_AUTH_TOKEN=YourSecretToken
+# MCP_TRANSPORT=stdio  # 'stdio' (default) or 'http' (Streamable HTTP /mcp)
+# PORT=3000
 ```
 
 ### Development
@@ -322,10 +332,25 @@ table semantics, gotchas, SOP excerpts — via `search-knowledge` and
 When `AUTOSAVE_TO_KNOWLEDGE=true` (and `KNOWLEDGE_ENABLED=true`), any tool
 result whose text exceeds `AUTOSAVE_THRESHOLD_CHARS` (default 8000) — a
 big query, a large stored-procedure recordset, even a dynamic skill call —
-is saved into the knowledge base instead of being returned in full, and
-replaced with a short preview plus a `search-knowledge` pointer. This is
-off by default. See "Autosaving large results" in
+is saved into the knowledge base silently in the background without truncating the
+API response payload. This is off by default. See "Autosaving large results" in
 [docs/KNOWLEDGE_BASE.md](docs/KNOWLEDGE_BASE.md#autosaving-large-results).
+
+### Safety Modes & MCP Annotations
+
+To prevent AI clients (such as Gemini, Claude, or Cursor) from constantly prompting for execution confirmation on harmless queries, `mssql-mcp` implements dynamic MCP Tool Annotations (`readOnlyHint`, `destructiveHint`, `openWorldHint`) alongside three distinct safety tiers:
+
+| Mode | Configuration | Allowed Operations | `readOnlyHint` | `destructiveHint` |
+|:---|:---|:---|:---:|:---:|
+| **Read-Only** (Default) | `SQLSERVER_ALLOW_MUTATIONS=false`<br>`SQLSERVER_ALLOW_ADDITIVE=false` | `SELECT`, CTEs (`WITH`), `#temp` tables, `@table` variables, `SET` session commands | `true` | `false` |
+| **Additive Mode** (Append-Only) | `SQLSERVER_ALLOW_ADDITIVE=true`<br>`SQLSERVER_ALLOW_MUTATIONS=false` | Read-only operations + **`INSERT`** into permanent tables | `false` | `false` |
+| **Full Mutations** | `SQLSERVER_ALLOW_MUTATIONS=true` | All DML (`INSERT`, `UPDATE`, `DELETE`) and DDL (`CREATE`, `ALTER`, `DROP`) | `false` | `false` / `true` |
+
+> [!NOTE]
+> **Strict Additive Policy**: In Additive Mode, `UPDATE` and `ALTER` are strictly disallowed. Any attempt to modify existing data or schema is intercepted before reaching the database engine.
+
+#### Temporary Tables (`#temp`, `##temp`) and Staging
+Creating, updating, and dropping session-local temporary tables (`#temp`, `##temp`) or table variables (`@table`) is treated as **read-only staging**. It does not permanently alter database state or user tables, preventing false-positive permission blocks.
 
 ## Architecture
 
