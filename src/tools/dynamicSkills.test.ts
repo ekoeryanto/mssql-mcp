@@ -259,6 +259,39 @@ describe('callDynamicSkill', () => {
   });
 });
 
+describe('callDynamicSkill - parameter hints', () => {
+  const definition: SkillDefinition = {
+    generated_prompt:
+      '{"type":"object","properties":{"tanggal":{"type":"string","description":"Tanggal"},"wilayah":{"type":"string","description":"Wilayah"}}}',
+    generated_sql: 'SELECT * FROM tb WHERE tgl = @tanggal',
+  };
+
+  test('lists accepted and received arguments when a parameter is missing', async () => {
+    const store = makeStore({
+      getSkillDefinition: async () => definition,
+      executeParameterized: async () => {
+        throw new Error('Must declare the scalar variable "@tanggal".');
+      },
+    });
+    const result = await callDynamicSkill(store, makeLogger(), 'cek', { tgl: '2026-01-01' });
+    expect(result.isError).toBe(true);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain('Must declare the scalar variable "@tanggal".');
+    expect(text).toContain("Parameter 'tanggal' was not provided. Accepted: tanggal, wilayah. Received: tgl (unknown: tgl).");
+  });
+
+  test('leaves other execution errors untouched', async () => {
+    const store = makeStore({
+      getSkillDefinition: async () => definition,
+      executeParameterized: async () => {
+        throw new Error('Timeout expired');
+      },
+    });
+    const result = await callDynamicSkill(store, makeLogger(), 'cek', { tanggal: 'x' });
+    expect((result.content[0] as { text: string }).text).toBe('Error: Timeout expired');
+  });
+});
+
 describe('saveSkill', () => {
   const validInput: SaveSkillInput = {
     tool_name: 'cek-tagihan',

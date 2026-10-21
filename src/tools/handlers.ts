@@ -4,6 +4,7 @@
 
 import type { QueryResult, ExecuteResult, MetadataResult, ProcedureResult, Logger } from '../types/index.js';
 import type SqlServerConnectionManager from '../db/connection.js';
+import { describeMissingParameter, extractParameterNames, extractTableNames, parseInvalidIdentifier, suggestSimilar } from '../db/errorHints.js';
 import { ALTER_PERMANENT_PATTERN, isAdditiveSql, isReadOnlySql, stripSqlNoise, UPDATE_PERMANENT_PATTERN } from '../db/sqlCheck.js';
 
 export interface MutationOptions {
@@ -84,10 +85,35 @@ export class ToolHandlers {
       };
     } catch (error) {
       this.logger.error('Query execution failed', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: await this.withIdentifierHint(message, input.query),
       };
+    }
+  }
+
+  /**
+   * Appends "Did you mean ..." to an invalid column/table error, using the
+   * real schema. Best effort: any failure here returns the original message.
+   */
+  private async withIdentifierHint(message: string, query: string): Promise<string> {
+    const invalid = parseInvalidIdentifier(message);
+    if (!invalid) return message;
+    try {
+      let candidates: string[];
+      if (invalid.kind === 'object') {
+        candidates = (await this.db.getMetadata('tables')).map((row) => String(row.name));
+      } else {
+        const tables = extractTableNames(query).slice(0, 5);
+        const columns = await Promise.all(tables.map((table) => this.db.getMetadata('columns', table)));
+        candidates = [...new Set(columns.flat().map((row) => String(row.name)))];
+      }
+      const suggestions = suggestSimilar(invalid.name, candidates);
+      return suggestions.length > 0 ? `${message} Did you mean: ${suggestions.join(', ')}?` : message;
+    } catch (hintError) {
+      this.logger.warn('Could not build identifier hint', hintError);
+      return message;
     }
   }
 
@@ -154,9 +180,11 @@ export class ToolHandlers {
       };
     } catch (error) {
       this.logger.error('Execute statement failed', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      const hint = describeMissingParameter(message, extractParameterNames(statement), Object.keys(params ?? {}));
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: hint ? `${message} ${hint}` : message,
       };
     }
   }

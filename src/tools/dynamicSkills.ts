@@ -8,6 +8,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import AjvModule, { type ErrorObject, type ValidateFunction } from 'ajv';
 import { buildDummyArgs, parseSkillPrompt, validatePromptDescriptions } from './skillSchema.js';
 import { isDestructiveSql, isReadOnlySql } from '../db/sqlCheck.js';
+import { describeMissingParameter } from '../db/errorHints.js';
 import type {
   JsonSchemaObject,
   Logger,
@@ -147,7 +148,9 @@ export async function callDynamicSkill(
     return { content: [{ type: 'text', text: JSON.stringify(result.recordset ?? [], null, 2) }] };
   } catch (error) {
     logger.error(`Skill "${toolName}" execution failed`, error);
-    return errorResult(error instanceof Error ? error.message : 'Unknown error');
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const hint = describeMissingParameter(message, Object.keys(parsed.schema.properties ?? {}), Object.keys(args));
+    return errorResult(hint ? `${message} ${hint}` : message);
   }
 }
 

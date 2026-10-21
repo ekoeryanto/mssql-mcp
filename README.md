@@ -10,6 +10,7 @@ A flexible and stable Model Context Protocol (MCP) server for Microsoft SQL Serv
 - ✅ **MCP Tool Annotations**: Dynamic `readOnlyHint`, `destructiveHint`, and `openWorldHint` annotations to eliminate repetitive permission prompts in Gemini and modern LLM clients
 - ✅ **Stored Procedures**: Execute procedures with input/output parameters and auto-detected read-only safety
 - ✅ **Metadata Retrieval**: List databases, tables, columns, and procedures
+- ✅ **Self-Correcting Errors**: Invalid column/table names in `query` come back with `Did you mean: ...` suggestions from the real schema, and missing parameters in `execute-statement` and dynamic skills list what was accepted vs. received, so an AI client fixes the call in one retry
 - ✅ **Connection Pooling**: Efficient connection management with configurable pool
 - ✅ **Retry Logic**: Automatic reconnection with exponential backoff
 - ✅ **Error Handling**: Comprehensive error handling and logging

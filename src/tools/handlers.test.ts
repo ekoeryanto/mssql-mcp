@@ -231,3 +231,72 @@ describe('ToolHandlers - handleExecute', () => {
     });
   });
 });
+
+describe('ToolHandlers - handleQuery error hints', () => {
+  function createFailingDb(message: string, metadata: Record<string, Record<string, unknown>[]>) {
+    return {
+      query: mock(async () => {
+        throw new Error(message);
+      }),
+      getMetadata: mock(async (type: string) => metadata[type] ?? []),
+    } as unknown as SqlServerConnectionManager;
+  }
+
+  test('suggests the closest real column when a column name is invalid', async () => {
+    const db = createFailingDb("Invalid column name 'tgl_bayr'.", {
+      columns: [{ name: 'tgl_bayar' }, { name: 'nama' }],
+    });
+    const handlers = new ToolHandlers(db, mockLogger, false);
+    const result = await handlers.handleQuery({ query: 'SELECT tgl_bayr FROM pembayaran' });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Invalid column name 'tgl_bayr'");
+    expect(result.error).toContain('Did you mean: tgl_bayar');
+  });
+
+  test('suggests the closest real table when an object name is invalid', async () => {
+    const db = createFailingDb("Invalid object name 'pelanggann'.", {
+      tables: [{ name: 'pelanggan' }, { name: 'tagihan' }],
+    });
+    const handlers = new ToolHandlers(db, mockLogger, false);
+    const result = await handlers.handleQuery({ query: 'SELECT * FROM pelanggann' });
+    expect(result.error).toContain('Did you mean: pelanggan');
+  });
+
+  test('keeps the original error when the metadata lookup itself fails', async () => {
+    const db = {
+      query: mock(async () => {
+        throw new Error("Invalid column name 'x'.");
+      }),
+      getMetadata: mock(async () => {
+        throw new Error('metadata down');
+      }),
+    } as unknown as SqlServerConnectionManager;
+    const handlers = new ToolHandlers(db, mockLogger, false);
+    const result = await handlers.handleQuery({ query: 'SELECT x FROM t' });
+    expect(result.error).toBe("Invalid column name 'x'.");
+  });
+
+  test('leaves unrelated errors untouched', async () => {
+    const db = createFailingDb('Incorrect syntax near FROM.', {});
+    const handlers = new ToolHandlers(db, mockLogger, false);
+    const result = await handlers.handleQuery({ query: 'SELECT FROM' });
+    expect(result.error).toBe('Incorrect syntax near FROM.');
+  });
+});
+
+describe('ToolHandlers - handleExecute parameter hints', () => {
+  test('explains a missing parameter using the parameters the SQL references', async () => {
+    const db = {
+      execute: mock(async () => {
+        throw new Error('Must declare the scalar variable "@nilai".');
+      }),
+    } as unknown as SqlServerConnectionManager;
+    const handlers = new ToolHandlers(db, mockLogger, true);
+    const result = await handlers.handleExecute({
+      statement: 'INSERT INTO t (a) VALUES (@nilai)',
+      params: { value: 1 },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Parameter 'nilai' was not provided. Accepted: nilai. Received: value (unknown: value).");
+  });
+});
