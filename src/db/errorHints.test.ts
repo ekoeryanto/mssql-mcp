@@ -105,6 +105,24 @@ describe('extractParameterNames', () => {
     expect(extractParameterNames(sql)).toEqual(['z']);
   });
 
+  test('treats user-defined types in a DECLARE list as declarations', () => {
+    expect(extractParameterNames('DECLARE @a INT, @b dbo.MyType, @c MyOther; SELECT @a, @b, @c, @d')).toEqual(['d']);
+  });
+
+  test('ends the DECLARE list at the next statement even without a semicolon', () => {
+    const sql = 'DECLARE @a INT, @b INT\nSELECT @a, @b, @c';
+    expect(extractParameterNames(sql)).toEqual(['c']);
+  });
+
+  test('keeps commas inside parentheses within one DECLARE item', () => {
+    const sql = 'DECLARE @a INT = (SELECT TOP 1 x FROM t WHERE y IN (1, 2)), @b MyType; SELECT @a, @b, @c';
+    expect(extractParameterNames(sql)).toEqual(['c']);
+  });
+
+  test('handles several separate DECLARE statements', () => {
+    expect(extractParameterNames('DECLARE @a INT; DECLARE @b MyType, @c INT; SELECT @a, @b, @c, @d')).toEqual(['d']);
+  });
+
   test('does not treat CAST(@x AS INT) as a declaration', () => {
     expect(extractParameterNames('SELECT CAST(@x AS INT), @y')).toEqual(['x', 'y']);
   });

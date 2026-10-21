@@ -83,22 +83,51 @@ export function describeMissingParameter(message: string, accepted: string[], re
 }
 
 const PARAMETER_PATTERN = /(?<![@\w])@(\w+)/g;
-// The first variable after DECLARE, whatever its type (may be user-defined)...
-const DECLARED_FIRST_PATTERN = /\bDECLARE\s+@(\w+)/gi;
-// ...and later ones in a comma list. These must be followed by a built-in type
-// so `, @b = 2` (EXEC argument) or `, @p` (default value) is not mistaken for one.
-const BUILTIN_TYPES =
-  'bigint|int|smallint|tinyint|bit|decimal|numeric|money|smallmoney|float|real|date|datetime|datetime2|' +
-  'datetimeoffset|smalldatetime|time|char|varchar|nchar|nvarchar|text|ntext|binary|varbinary|image|' +
-  'uniqueidentifier|xml|sql_variant|table|cursor|geography|geometry|hierarchyid|rowversion|timestamp';
-const DECLARED_LISTED_PATTERN = new RegExp(`,\\s*@(\\w+)\\s+(?:AS\\s+)?(?:${BUILTIN_TYPES})\\b`, 'gi');
+// Keywords that start a new statement and therefore end a DECLARE list that has no semicolon.
+const STATEMENT_START_PATTERN =
+  /^(?:SELECT|SET|INSERT|UPDATE|DELETE|MERGE|EXEC|EXECUTE|IF|WHILE|BEGIN|WITH|PRINT|RETURN|DECLARE|CREATE|DROP|ALTER|TRUNCATE)\b/i;
+const DECLARE_KEYWORD_PATTERN = /\bDECLARE\b/gi;
+const LEADING_VARIABLE_PATTERN = /^\s*@(\w+)/;
+
+/**
+ * Every variable a DECLARE statement introduces, whatever its type. A DECLARE
+ * is a comma-separated list; commas inside parentheses (default expressions,
+ * table definitions) belong to one item, and a variable only counts as
+ * declared when it starts an item, so `= @p` defaults stay parameters.
+ */
+function declaredVariables(cleanSql: string): Set<string> {
+  const declared = new Set<string>();
+  for (const declare of cleanSql.matchAll(DECLARE_KEYWORD_PATTERN)) {
+    let depth = 0;
+    let itemStart = declare.index + declare[0].length;
+    const takeItem = (end: number): void => {
+      const variable = LEADING_VARIABLE_PATTERN.exec(cleanSql.slice(itemStart, end));
+      if (variable) declared.add(variable[1]);
+    };
+    let pos = itemStart;
+    for (; pos < cleanSql.length; pos++) {
+      const char = cleanSql[pos];
+      if (char === '(') depth++;
+      else if (char === ')') depth--;
+      if (depth < 0) break;
+      if (depth > 0) continue;
+      if (char === ';') break;
+      if (char === ',') {
+        takeItem(pos);
+        itemStart = pos + 1;
+      } else if (/\w/.test(char) && !/\w/.test(cleanSql[pos - 1] ?? ' ') && STATEMENT_START_PATTERN.test(cleanSql.slice(pos))) {
+        break;
+      }
+    }
+    takeItem(pos);
+  }
+  return declared;
+}
 
 /** Distinct @parameters a statement references, excluding variables it DECLAREs itself. */
 export function extractParameterNames(sqlText: string): string[] {
   const clean = stripSqlNoise(sqlText);
-  const declared = new Set(
-    [...clean.matchAll(DECLARED_FIRST_PATTERN), ...clean.matchAll(DECLARED_LISTED_PATTERN)].map((match) => match[1]),
-  );
+  const declared = declaredVariables(clean);
   const names: string[] = [];
   for (const match of clean.matchAll(PARAMETER_PATTERN)) {
     if (!declared.has(match[1]) && !names.includes(match[1])) names.push(match[1]);
