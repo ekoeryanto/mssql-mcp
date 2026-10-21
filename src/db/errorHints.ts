@@ -83,12 +83,22 @@ export function describeMissingParameter(message: string, accepted: string[], re
 }
 
 const PARAMETER_PATTERN = /(?<![@\w])@(\w+)/g;
-const DECLARED_VARIABLE_PATTERN = /\bDECLARE\s+@(\w+)/gi;
+// The first variable after DECLARE, whatever its type (may be user-defined)...
+const DECLARED_FIRST_PATTERN = /\bDECLARE\s+@(\w+)/gi;
+// ...and later ones in a comma list. These must be followed by a built-in type
+// so `, @b = 2` (EXEC argument) or `, @p` (default value) is not mistaken for one.
+const BUILTIN_TYPES =
+  'bigint|int|smallint|tinyint|bit|decimal|numeric|money|smallmoney|float|real|date|datetime|datetime2|' +
+  'datetimeoffset|smalldatetime|time|char|varchar|nchar|nvarchar|text|ntext|binary|varbinary|image|' +
+  'uniqueidentifier|xml|sql_variant|table|cursor|geography|geometry|hierarchyid|rowversion|timestamp';
+const DECLARED_LISTED_PATTERN = new RegExp(`,\\s*@(\\w+)\\s+(?:AS\\s+)?(?:${BUILTIN_TYPES})\\b`, 'gi');
 
 /** Distinct @parameters a statement references, excluding variables it DECLAREs itself. */
 export function extractParameterNames(sqlText: string): string[] {
   const clean = stripSqlNoise(sqlText);
-  const declared = new Set([...clean.matchAll(DECLARED_VARIABLE_PATTERN)].map((match) => match[1]));
+  const declared = new Set(
+    [...clean.matchAll(DECLARED_FIRST_PATTERN), ...clean.matchAll(DECLARED_LISTED_PATTERN)].map((match) => match[1]),
+  );
   const names: string[] = [];
   for (const match of clean.matchAll(PARAMETER_PATTERN)) {
     if (!declared.has(match[1]) && !names.includes(match[1])) names.push(match[1]);

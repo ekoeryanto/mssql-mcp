@@ -90,4 +90,26 @@ describe('extractParameterNames', () => {
     const sql = "DECLARE @x INT; SELECT @x, @y, @@ROWCOUNT, '@fake' -- @ghost";
     expect(extractParameterNames(sql)).toEqual(['y']);
   });
+
+  test('ignores every variable in a comma-separated DECLARE', () => {
+    expect(extractParameterNames('DECLARE @a INT, @b INT; SELECT @a, @b, @c')).toEqual(['c']);
+  });
+
+  test('keeps a real parameter used as a DECLARE default value', () => {
+    const sql = 'DECLARE @a INT = @p, @b VARCHAR(10); SELECT @a, @b, @p';
+    expect(extractParameterNames(sql)).toEqual(['p']);
+  });
+
+  test('handles AS, table variables and multi-line DECLARE lists', () => {
+    const sql = 'DECLARE @t TABLE (id INT),\n  @n AS NVARCHAR(5);\nSELECT @t, @n, @z';
+    expect(extractParameterNames(sql)).toEqual(['z']);
+  });
+
+  test('does not treat CAST(@x AS INT) as a declaration', () => {
+    expect(extractParameterNames('SELECT CAST(@x AS INT), @y')).toEqual(['x', 'y']);
+  });
+
+  test('does not treat EXEC named arguments as declarations', () => {
+    expect(extractParameterNames('EXEC p @a = 1, @b = 2')).toEqual(['a', 'b']);
+  });
 });
